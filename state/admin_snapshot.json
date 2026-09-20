@@ -1,0 +1,39 @@
+{
+  "league_name": "Winter Sim League",
+  "week": 1,
+  "players": [
+    {
+      "name": "Jeff",
+      "outdoor_ghin": 12.0,
+      "simcore_index_start": 10.0,
+      "simcore_index_current": 10.0,
+      "practice_score": null,
+      "week_scores": [
+        36,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "total_individual_points": 18,
+      "points_per_round": [
+        18
+      ],
+      "team_points": 10
+    }
+  ],
+  "teams": [
+    {
+      "name": "Team A",
+      "points": 10
+    },
+    {
+      "name": "Team B",
+      "points": 8
+    }
+  ]
+}

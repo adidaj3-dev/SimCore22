@@ -1,0 +1,26 @@
+# --- Core Runtime ---
+numpy
+pydantic
+python-dotenv
+requests
+
+# --- OCR + Image Processing ---
+opencv-python
+pytesseract
+pillow
+
+# --- Screenshot Capture ---
+mss
+
+# --- WebSockets ---
+websockets==10.4
+
+# --- Logging / CLI Enhancements ---
+rich==14.3.3
+termcolor==3.3.0
+
+# --- Optional Scientific / Math ---
+scipy
+
+# --- Optional Serial ---
+pyserial

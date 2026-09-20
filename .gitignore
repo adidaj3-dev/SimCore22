@@ -1,0 +1,18 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# macOS junk
+.DS_Store
+
+# Windows / new venv
+.venv/
+
+# Runtime output
+*.log
+captures/
+hud_preview.png
+gspro_capture.png

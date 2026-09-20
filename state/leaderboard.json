@@ -1,0 +1,19 @@
+{
+  "course_name": "Test Course",
+  "format": "Net Stroke Play",
+  "league_name": "Winter Sim League",
+  "week": 1,
+  "players": [
+    {
+      "name": "Jeff",
+      "thru": 9,
+      "gross": 36,
+      "net": 26,
+      "vs_par": 0,
+      "points": 18,
+      "points_needed": 18,
+      "simcore_index": 10.0,
+      "outdoor_hcp": 12.0
+    }
+  ]
+}

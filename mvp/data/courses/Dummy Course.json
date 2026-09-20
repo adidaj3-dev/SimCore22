@@ -1,0 +1,113 @@
+{
+  "course_name": "Dummy Course",
+  "holes": [
+    {
+      "hole": 1,
+      "par": 4,
+      "handicap": 1,
+      "yardage": 400
+    },
+    {
+      "hole": 2,
+      "par": 4,
+      "handicap": 2,
+      "yardage": 400
+    },
+    {
+      "hole": 3,
+      "par": 4,
+      "handicap": 3,
+      "yardage": 400
+    },
+    {
+      "hole": 4,
+      "par": 4,
+      "handicap": 4,
+      "yardage": 400
+    },
+    {
+      "hole": 5,
+      "par": 4,
+      "handicap": 5,
+      "yardage": 400
+    },
+    {
+      "hole": 6,
+      "par": 4,
+      "handicap": 6,
+      "yardage": 400
+    },
+    {
+      "hole": 7,
+      "par": 4,
+      "handicap": 7,
+      "yardage": 400
+    },
+    {
+      "hole": 8,
+      "par": 4,
+      "handicap": 8,
+      "yardage": 400
+    },
+    {
+      "hole": 9,
+      "par": 4,
+      "handicap": 9,
+      "yardage": 400
+    },
+    {
+      "hole": 10,
+      "par": 4,
+      "handicap": 10,
+      "yardage": 400
+    },
+    {
+      "hole": 11,
+      "par": 4,
+      "handicap": 11,
+      "yardage": 400
+    },
+    {
+      "hole": 12,
+      "par": 4,
+      "handicap": 12,
+      "yardage": 400
+    },
+    {
+      "hole": 13,
+      "par": 4,
+      "handicap": 13,
+      "yardage": 400
+    },
+    {
+      "hole": 14,
+      "par": 4,
+      "handicap": 14,
+      "yardage": 400
+    },
+    {
+      "hole": 15,
+      "par": 4,
+      "handicap": 15,
+      "yardage": 400
+    },
+    {
+      "hole": 16,
+      "par": 4,
+      "handicap": 16,
+      "yardage": 400
+    },
+    {
+      "hole": 17,
+      "par": 4,
+      "handicap": 17,
+      "yardage": 400
+    },
+    {
+      "hole": 18,
+      "par": 4,
+      "handicap": 18,
+      "yardage": 400
+    }
+  ]
+}
