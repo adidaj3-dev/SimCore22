@@ -1,28 +1,20 @@
 # mvp/engine/ocr/scorecard.py
 import logging
-from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
-import cv2
-
-from .capture import capture_scorecard_frame_from_image
-from .preprocess import preprocess_for_ocr
-from .preprocess import simple_ocr
+from .scorecard_reader import ScorecardReadError, read_scorecard
 
 logger = logging.getLogger(__name__)
 
 
-def read_scorecard_from_image(
-    frame,
-    base_dir: Path | None = None,
-) -> Dict[str, Any]:
+def read_scorecard_from_image(frame) -> Dict[str, Any]:
     """
-    Very simple placeholder scorecard reader.
-    You can expand this to parse per-hole par/yardage later.
+    Read a GSPro scorecard screenshot (BGR array) into a plain dict:
+    course name, par / stroke index per hole, and each player's hole scores.
+    Returns {} if the image isn't a scorecard.
     """
-    img = capture_scorecard_frame_from_image(frame, base_dir=base_dir, preprocess=True)
-    text = simple_ocr(img, config="--psm 6")
-    return {
-        "course_name": "Unknown Course",
-        "raw_text": text,
-    }
+    try:
+        return read_scorecard(frame).to_dict()
+    except ScorecardReadError as exc:
+        logger.warning("Not a readable scorecard: %s", exc)
+        return {}

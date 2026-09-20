@@ -5,7 +5,8 @@ from typing import Callable
 import cv2
 import numpy as np
 import pytesseract
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+from . import tesseract_setup  # noqa: F401  (finds tesseract.exe)
 
 logger = logging.getLogger(__name__)
 

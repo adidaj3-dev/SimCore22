@@ -1,26 +1,20 @@
-# --- Core Runtime ---
-numpy
-pydantic
-python-dotenv
-requests
+# SimCore22 runtime dependencies (Python 3.12+; developed on 3.14)
+# Install:  .venv\Scripts\python -m pip install -r requirements.txt
 
-# --- OCR + Image Processing ---
-opencv-python
-pytesseract
-pillow
-
-# --- Screenshot Capture ---
+# --- Screen capture + OCR ---
 mss
+opencv-python
+numpy
+pillow
+pytesseract          # also needs the Tesseract program itself: winget install tesseract-ocr.tesseract
 
-# --- WebSockets ---
-websockets==10.4
+# --- Console UI ---
+rich
 
-# --- Logging / CLI Enhancements ---
-rich==14.3.3
-termcolor==3.3.0
+# --- Dev ---
+pytest
 
-# --- Optional Scientific / Math ---
-scipy
-
-# --- Optional Serial ---
-pyserial
+# --- Add later when the code actually uses them ---
+# websockets   (live leaderboard push to screens)
+# pyserial     (direct launch-monitor serial link, if ever needed)
+# scipy        (advanced analytics)

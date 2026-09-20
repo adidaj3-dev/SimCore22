@@ -11,8 +11,8 @@ def _grab_monitor(monitor_index: int = 1) -> np.ndarray:
     Capture a full frame from the given monitor index using MSS.
     Returns a BGR numpy array.
     """
-    with mss.mss() as sct:
-        monitors = sct.monitors  # ALWAYS a list on Windows GSPro bays
+    with mss.MSS() as sct:
+        monitors = sct.monitors  # index 0 = all screens combined, 1 = primary
 
         # Validate index
         if monitor_index < 0 or monitor_index >= len(monitors):
