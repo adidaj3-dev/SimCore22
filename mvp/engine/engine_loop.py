@@ -1,13 +1,15 @@
 # mvp/engine/engine_loop.py
-
 import asyncio
 import logging
 from datetime import datetime, timedelta
+from typing import Optional
 
+from mvp.engine import config
 from mvp.engine.logging_config import setup_logging
 from mvp.engine.ingestion.dispatcher import EventDispatcher
 from mvp.engine.ingestion.foresight.listener import ForesightLiveListener
 from mvp.engine.ocr.ocr_listener import OCRHudListener
+from mvp.engine.ocr.scorecard import read_scorecard_from_image
 
 from mvp.engine.models.events import ShotEvent, PlayerEvent, HoleEvent, ScoreEvent
 from mvp.engine import engine
@@ -30,23 +32,38 @@ from mvp.engine.state_writer import (
 
 logger = logging.getLogger(__name__)
 
+# Used only when a player has no handicap on record yet (first-ever round).
+# Picked, not measured - tune once real league data exists.
+DEFAULT_STARTING_INDEX = 18
+
 
 class EngineRuntime:
-    def __init__(self, foresight_host: str, foresight_port: int, ocr_enabled: bool = True):
+    def __init__(
+        self,
+        foresight_host: str,
+        foresight_port: int,
+        ocr_enabled: bool = True,
+        monitor_index: int = 1,
+        ocr_poll_interval: float = 1.0,
+    ):
         self.dispatcher = EventDispatcher()
 
         # Ingestion
+        # NOTE: the Foresight wire protocol here is still a placeholder (see
+        # ingestion/foresight/parser.py) - nothing has decoded a real Falcon/Hawk
+        # packet yet. Run mvp/tools/falcon_packet_decoder.py on the bay to
+        # capture real packets, then fix the parser against them.
         self.foresight_listener = ForesightLiveListener(
             foresight_host, foresight_port, self.dispatcher
         )
 
-        self.ocr_listener = None
+        self.monitor_index = monitor_index
+        self.ocr_poll_interval = ocr_poll_interval
+        self.ocr_listener: Optional[OCRHudListener] = None
         if ocr_enabled:
             self.ocr_listener = OCRHudListener(
-                dispatcher=self.dispatcher,
-                hud_layout_path="mvp/engine/ocr/layouts/gspro_hud.json",
-                monitor_index=1,
-                poll_interval=0.5,
+                emit_callback=self.dispatcher.emit,
+                poll_interval=ocr_poll_interval,
             )
         else:
             logger.info("[OCR] Disabled")
@@ -73,9 +90,30 @@ class EngineRuntime:
         ]
 
         if self.ocr_listener:
-            tasks.append(asyncio.create_task(self.ocr_listener.start()))
+            tasks.append(asyncio.create_task(self._ocr_capture_loop()))
 
         await asyncio.gather(*tasks)
+
+    async def _ocr_capture_loop(self) -> None:
+        """
+        Owns screen capture and feeds frames to the OCR listener. Capture
+        failures (no monitor, GSPro in exclusive fullscreen, etc.) are logged
+        and retried rather than killing the whole engine - run
+        `python -m mvp.tools.bay_check` to diagnose them.
+        """
+        # Imported here, not at module load, so this module still imports on
+        # non-Windows machines (mss/cv2 are fine everywhere, but this keeps
+        # the Windows-only capture call isolated).
+        from mvp.engine.ocr.capture_windows import capture_full_hud_frame_from_monitor
+
+        logger.info(f"Starting OCR capture loop on monitor {self.monitor_index}")
+        while True:
+            try:
+                frame = capture_full_hud_frame_from_monitor(self.monitor_index)
+                await self.ocr_listener.process_frame(frame)
+            except Exception:
+                logger.exception("OCR capture loop iteration failed")
+            await asyncio.sleep(self.ocr_poll_interval)
 
     async def _engine_loop(self) -> None:
         logger.info("Engine loop running...")
@@ -106,6 +144,7 @@ class EngineRuntime:
 
             elif isinstance(event, ScoreEvent):
                 engine.handle_score_event(event)
+                self._refresh_leaderboard()  # push the confirmed score, not just the last shot tally
                 await self._maybe_handle_round_completion(event)
 
     async def _handle_shot_event(self, shot: ShotEvent) -> None:
@@ -116,16 +155,21 @@ class EngineRuntime:
             return
 
         self.shots.append(shot)
+        self._refresh_leaderboard()
 
-        # Update leaderboard
+    def _refresh_leaderboard(self) -> None:
+        """
+        Recompute standings from the current session state and push them out
+        (console + state/leaderboard.json). Called after every shot AND after
+        every confirmed score, so the last hole of a round shows the official
+        score rather than a stale shot-count the instant it's recorded.
+        """
         session_state = engine.get_session_state()
         self.leaderboard.update_from_session(session_state)
 
-        # Print console leaderboard
         standings = self.leaderboard.get_standings()
         display_live_dashboard(standings)
 
-        # Write leaderboard JSON
         players_json = []
         for row in standings:
             players_json.append({
@@ -134,7 +178,7 @@ class EngineRuntime:
                 "thru": row.thru,
                 "gross": row.gross_score,
                 "net": row.net_score,
-                "vs_par": row.gross_score - (row.thru * 4),
+                "vs_par": row.gross_score - (row.thru * 4),  # assumes par 4; refine once course par is OCR'd live
                 "points": 0,
                 "points_needed": 36,
                 "simcore_index": row.handicap_index,
@@ -181,6 +225,46 @@ class EngineRuntime:
             )
             logger.info(f"[HANDICAP] Updated index for {player_name}: {new_index}")
 
+    def _apply_scorecard_overrides(self, session_state) -> None:
+        """
+        At round end, OCR the GSPro scorecard screen and - only where it reads
+        as internally consistent (see ScorecardData.verified) - use its printed
+        scores in place of the live shot tally. The tally can drift (a missed
+        or doubled shot detection); the printed scorecard is GSPro's own math.
+        Safe to call even if no scorecard is on screen: it just logs and the
+        shot-tallied scores stand.
+        """
+        try:
+            from mvp.engine.ocr.capture_windows import capture_full_hud_frame_from_monitor
+
+            frame = capture_full_hud_frame_from_monitor(self.monitor_index)
+        except Exception:
+            logger.info("[ROUND] Couldn't capture a frame for scorecard verification; using shot tally.")
+            return
+
+        card = read_scorecard_from_image(frame)
+        if not card or not card.get("players"):
+            logger.info("[ROUND] No scorecard on screen (or it didn't parse); using shot tally.")
+            return
+
+        for player_name, round_state in session_state.players.items():
+            match = next(
+                (p for p in card["players"] if p["name"].strip().lower() == player_name.strip().lower()),
+                None,
+            )
+            if match is None or not match.get("verified"):
+                logger.info(f"[ROUND] No verified scorecard row for {player_name}; using shot tally.")
+                continue
+
+            for hole_num, score in match["strokes"].items():
+                hole_state = round_state.holes.setdefault(hole_num, engine.HoleState(hole_number=hole_num))
+                hole_state.gross_score = score
+                if hole_num in card.get("par", {}):
+                    hole_state.par = card["par"][hole_num]
+
+            logger.info(f"[ROUND] Applied verified scorecard for {player_name}: "
+                        f"{len(match['strokes'])} holes, total {match['total']}")
+
     async def _finalize_round(self) -> None:
         if self.round_complete:
             return
@@ -189,6 +273,7 @@ class EngineRuntime:
         logger.info("[ROUND] Finalizing round...")
 
         session_state = engine.get_session_state()
+        self._apply_scorecard_overrides(session_state)
 
         # Build scorecard + shots per player
         for player_name, round_state in session_state.players.items():
@@ -207,14 +292,20 @@ class EngineRuntime:
                     "up_and_down_success": hole.up_and_down_success,
                 })
 
-            # Filter shots for this player
-            player_shots = [s for s in self.shots if s.metadata.get("player") == player_name]
+            # Filter shots for this player (handle_shot_event stamps player_name, not "player")
+            player_shots = [s for s in self.shots if s.metadata.get("player_name") == player_name]
+
+            starting_index = round_state.handicap_index
+            if starting_index is None:
+                starting_index = DEFAULT_STARTING_INDEX
+                logger.info(f"[ROUND] {player_name} has no handicap on record; "
+                            f"using default starting index {DEFAULT_STARTING_INDEX}.")
 
             stats = analyze_round(
                 shots=player_shots,
                 scorecard=scorecard,
-                simcore_index_before=round_state.handicap_index,
-                outdoor_handicap_start=round_state.handicap_index,
+                simcore_index_before=starting_index,
+                outdoor_handicap_start=starting_index,
                 round_notes="Auto summary",
             )
 
@@ -278,9 +369,9 @@ def main() -> None:
     logger.info("=== SimCore22 MVP: Engine Runtime ===")
 
     runtime = EngineRuntime(
-        foresight_host="127.0.0.1",
-        foresight_port=12345,
-        ocr_enabled=True,   # Windows tomorrow
+        foresight_host=config.GSPRO_TCP_HOST,
+        foresight_port=config.GSPRO_TCP_PORT,
+        ocr_enabled=True,
     )
 
     asyncio.run(runtime.start())

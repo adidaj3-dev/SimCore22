@@ -44,11 +44,11 @@ _OVERRIDE_FORMULAS: Dict[str, Formula] = {}
 # Registry API
 # ------------------------------------------------------------
 
-def register_formula(name: str, expression: str) -> Formula:
+def register_formula(name: str, expression: str, description: str = "") -> Formula:
     """
     Register or override a formula at runtime (admin feature).
     """
-    formula = Formula(name=name, expression=expression)
+    formula = Formula(name=name, expression=expression, description=description)
     _OVERRIDE_FORMULAS[name] = formula
     return formula
 

@@ -1,5 +1,6 @@
 from typing import Dict, Any
 from mvp.engine.handicap.handicap_engine import HandicapEngine
+from mvp.engine.handicap.admin_override import apply_admin_override
 
 
 class PlayerAdminAPI:
@@ -19,12 +20,13 @@ class PlayerAdminAPI:
         return {
             "player_id": player.id,
             "simcore_index": player.simcore_index,
-            "projected_ghin": self.engine.projected_ghin(player.simcore_index),
+            "projected_outdoor_index": self.engine.projected_outdoor_index(player.simcore_index),
             "outdoor_handicap": player.outdoor_handicap,
         }
 
     def override_handicap(self, player, simcore_value=None, outdoor_value=None):
-        result = self.engine.apply_override(
+        result = apply_admin_override(
+            player_id=player.id,
             current_simcore=player.simcore_index,
             current_outdoor=player.outdoor_index,
             simcore_override=simcore_value,

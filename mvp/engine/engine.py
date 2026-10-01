@@ -27,12 +27,28 @@ class HoleState:
     strokes: int = 0
     gross_score: Optional[int] = None
 
+    # Filled in by scorecard OCR / future putting detection. None/False means
+    # "not observed yet", not "zero" - analyzer.py treats them accordingly.
+    putts: int = 0
+    fairway_hit: bool = False
+    green_in_reg: bool = False
+    proximity: Optional[float] = None
+    sand: bool = False
+    up_and_down_attempt: bool = False
+    up_and_down_success: bool = False
+
 
 @dataclass
 class RoundState:
     player_name: str
     holes: Dict[int, HoleState] = field(default_factory=dict)
     current_hole: Optional[int] = None
+
+    # Set once a handicap has been computed for this player (see
+    # handicap_engine.HandicapEngine). None means "never computed" - callers
+    # should fall back to a configured starting index, not treat it as 0.
+    handicap_index: Optional[int] = None
+    team_name: Optional[str] = None
 
 
 @dataclass

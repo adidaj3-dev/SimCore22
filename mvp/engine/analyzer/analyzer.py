@@ -21,14 +21,12 @@ def analyze_live_shot(shots: List[ShotEvent]) -> Dict[str, Any]:
         "total_shots": len(shots),
         "last_ball_speed": _safe(last.ball_speed),
         "last_launch_angle": _safe(last.launch_angle),
-        "last_spin": _safe(last.spin),
+        "last_spin": _safe(last.spin_rate),
         "last_spin_axis": _safe(last.spin_axis),
-        "last_shape": getattr(last, "shape", None),
-        "last_carry": _safe(last.carry),
-        "last_quality": _safe(getattr(last, "quality", None)),
+        "last_curve": last.curve,
+        "last_carry": _safe(last.carry_distance),
         "avg_ball_speed": sum(_safe(s.ball_speed) for s in shots) / len(shots),
-        "avg_carry": sum(_safe(s.carry) for s in shots) / len(shots),
-        "avg_quality": sum(_safe(getattr(s, "quality", None)) for s in shots) / len(shots),
+        "avg_carry": sum(_safe(s.carry_distance) for s in shots) / len(shots),
     }
 
     return analysis
@@ -115,13 +113,13 @@ def analyze_round(
     offlines: list[float] = []
 
     for shot in shots:
-        if shot.carry is not None:
-            carries.append(float(shot.carry))
+        if shot.carry_distance is not None:
+            carries.append(float(shot.carry_distance))
         if shot.ball_speed is not None:
             ball_speeds.append(float(shot.ball_speed))
-        if getattr(shot, "azimuth", None) is not None:
+        if shot.azimuth is not None:
             offlines.append(float(shot.azimuth))
-        if getattr(shot, "raw_payload", {}).get("penalty", False):
+        if shot.metadata.get("penalty", False):
             stats["penalties"] += 1
 
     if ball_speeds:

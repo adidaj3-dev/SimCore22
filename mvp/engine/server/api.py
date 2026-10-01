@@ -1,3 +1,11 @@
+# NOT WIRED UP YET.
+# - `pip install fastapi uvicorn` first (not in requirements.txt - this isn't
+#   running anywhere yet).
+# - The `leaderboard` object below is its own empty instance; it is never the
+#   same object engine_loop.py updates. Serving the real live leaderboard to
+#   bay screens needs either engine_loop importing and updating THIS module's
+#   leaderboard directly (single process), or both reading state/leaderboard.json
+#   (simplest: have this endpoint just read+return that file).
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

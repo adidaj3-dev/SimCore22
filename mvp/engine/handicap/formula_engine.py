@@ -49,6 +49,7 @@ SAFE_GLOBALS: Dict[str, Any] = {
 class Formula:
     name: str
     expression: str
+    description: str = ""
     _compiled: Any = None
 
     def compile(self) -> None:

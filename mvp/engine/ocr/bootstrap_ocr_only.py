@@ -3,7 +3,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from mvp.engine.models.events import EventDispatcher
+from mvp.engine.ingestion.dispatcher import EventDispatcher
 from .round_start_ocr import RoundStartOCR
 
 logger = logging.getLogger("SimCore22.OCRBootstrap")

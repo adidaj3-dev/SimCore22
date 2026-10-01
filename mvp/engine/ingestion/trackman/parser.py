@@ -1,19 +1,34 @@
-from mvp.engine.models.shot import SimCore22Shot
+# mvp/engine/ingestion/trackman/parser.py
+"""
+UNVERIFIED: no TrackMan unit has been captured against this yet.
 
-def parse_trackman_shot(payload: dict) -> SimCore22Shot:
-    """
-    Converts a TrackMan live payload into a normalized SimCore22Shot.
-    """
+Builds a normalized ShotEvent from what TrackMan's live JSON output is
+documented to look like. Field names and payload shape need confirming
+against a real capture (see mvp/tools/falcon_packet_decoder.py for the
+pattern - point the same approach at a TrackMan unit) before this is trusted
+for scoring.
+"""
+from datetime import datetime
 
-    return SimCore22Shot(
+from mvp.engine.models.events import ShotEvent
+
+
+def parse_trackman_shot(payload: dict) -> ShotEvent:
+    """Converts a TrackMan live payload into SimCore22's normalized ShotEvent."""
+    return ShotEvent(
+        source_device="TrackMan",
+        timestamp=datetime.utcnow(),
         ball_speed=payload.get("BallSpeed"),
         launch_angle=payload.get("LaunchAngle"),
         azimuth=payload.get("LaunchDirection"),
-        spin=payload.get("SpinRate"),
+        spin_rate=payload.get("SpinRate"),
         spin_axis=payload.get("SpinAxis"),
         club_speed=payload.get("ClubSpeed"),
-        face_to_target=payload.get("FaceToPath"),
-        club_path=payload.get("ClubPath"),
-        raw_payload=payload,
-        source="trackman",
+        carry_distance=payload.get("Carry"),
+        total_distance=payload.get("Total"),
+        metadata={
+            "face_to_target": payload.get("FaceToPath"),
+            "club_path": payload.get("ClubPath"),
+            "raw": payload,
+        },
     )

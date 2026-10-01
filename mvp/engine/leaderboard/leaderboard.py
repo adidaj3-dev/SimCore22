@@ -78,3 +78,19 @@ class Leaderboard:
             self._rows.values(),
             key=lambda r: (r.net_score, r.gross_score),
         )
+
+    def to_dict(self) -> List[Dict[str, object]]:
+        """JSON-serializable standings, for the web API / live leaderboard."""
+        return [
+            {
+                "position": pos,
+                "player_name": row.player_name,
+                "team_name": row.team_name,
+                "gross_score": row.gross_score,
+                "net_score": row.net_score,
+                "points": row.points,
+                "thru": row.thru,
+                "handicap_index": row.handicap_index,
+            }
+            for pos, row in enumerate(self.get_standings(), start=1)
+        ]
