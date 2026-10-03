@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SimCore22 · Admin</title>
+  <meta name="description" content="Rounds, players and system status for your simulator venue.">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/components.css">
+  <link rel="stylesheet" href="/static/css/admin.css">
+  <script>
+    /* apply the saved theme before first paint, so there is no flash of the wrong one */
+    try { var t = localStorage.getItem('sc-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <noscript><p style="padding:2rem">The admin portal needs JavaScript.</p></noscript>
+  <script type="module" src="/static/js/admin.js"></script>
+</body>
+</html>

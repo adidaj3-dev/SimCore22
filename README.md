@@ -9,6 +9,13 @@ leaderboards for leagues and tournaments. Windows, Python 3.12+ (developed on
 > hardware. The first run on a real bay (Foresight Falcon / Hawk + GSPro) is
 > the next milestone - see [Status](#status).
 
+<p align="center">
+  <img src="docs/images/live-leaderboard.png" alt="Live leaderboard on a bay screen" width="880">
+</p>
+<p align="center"><sub>The live leaderboard for bay screens. (Screenshots show the built-in <b>demo league</b>: fictional players, not real data.)</sub></p>
+
+**Try it without a bay:** double-click `run_demo.bat` (or run `python -m simcore22.web --demo`).
+
 ## Status
 
 | Area | State |
@@ -21,7 +28,8 @@ leaderboards for leagues and tournaments. Windows, Python 3.12+ (developed on
 | Live player and hole tracking from the HUD | needs calibration on a bay |
 | Live shot data (ball speed, carry, ...) | **not working yet** - needs real launch-monitor packets (`packet_capture`) |
 | Handicap updates | engine built; leagues (schedule, round numbers) not configurable yet |
-| Database, admin portal, on-screen leaderboards, POS, scheduling | not started |
+| Live leaderboard for bay screens + venue admin portal (web UI) | built, tested; works on demo data today and on real rounds as soon as there are some; **no login yet** |
+| Database, accounts / login, POS, bay & lesson scheduling | not started |
 
 ## How it works
 
@@ -44,11 +52,38 @@ client, so the engine would take FSX's place. Turn the feed on only after
 `packet_capture` has found the launch monitor's real port
 (`SIMCORE_FEED_PORT`); the engine refuses port 921.
 
+## Web UI
+
+Two screens, served by a small local web app that only *reads* what the engine
+records (so the engine and the screens can run, crash and restart independently):
+
+<p align="center">
+  <img src="docs/images/admin-overview.png" alt="Admin overview" width="49%">
+  <img src="docs/images/admin-round.png" alt="A round with its verified scorecard" width="49%">
+</p>
+
+| Screen | Where | What it's for |
+|---|---|---|
+| **Live leaderboard** | `/live` | Put it on every bay TV: big type, glides when someone moves up, flashes on a new score, pages through long fields, works on a phone. Press `F` for full screen |
+| **Admin portal** | `/admin` | **Overview** (rounds, active players, average to par, % verified by GSPro, scoring mix), **Rounds** (filter, search, full hole-by-hole scorecard with birdie / bogey marks, where the scores came from, the GSPro screenshot), **Players** (profiles, handicap, trend), **System** (is the engine running, can it see GSPro, with the fix when it can't). Light and dark themes |
+| **API** | `/docs` | Every number the screens show, as JSON with interactive documentation |
+
+```bash
+python -m simcore22.web            # your real rounds
+python -m simcore22.web --demo     # the fictional demo league (every screen is labelled DEMO)
+```
+
+`run_ui.bat` / `run_demo.bat` do the same with a double-click, and `run_bay.bat`
+starts the UI together with the engine. Set `SIMCORE_LEAGUE_NAME` (an environment
+variable) to title the live board with your league; unset, it just says "Live Leaderboard". It listens on this PC only by default;
+for screens on other PCs use `--host 0.0.0.0` - **there is no login yet**, so use a
+trusted venue network. Nothing is loaded from the internet, so it works offline.
+
 ## Set up a bay PC (once)
 
 Double-click **`setup_bay.bat`**. It installs Python 3.14 and Tesseract
 (via winget), creates `.venv`, installs `requirements.txt`, and runs the
-diagnostic. Then **`run_bay.bat`** starts the engine.
+diagnostic. Then **`run_bay.bat`** starts the web UI and the engine.
 
 ## How a round works
 
@@ -106,6 +141,7 @@ Run from the project folder, e.g. `.venv\Scripts\python -m simcore22.tools.bay_c
 
 | Tool | What it's for |
 |---|---|
+| `simcore22.web` | The web UI: live leaderboard, admin portal, API (see above). `--demo` for the fictional league |
 | `simcore22.tools.bay_check` | What's running, what the capture sees, a verdict. Saves `captures/<time>/` (screenshots, `report.json`) - send that folder back when something looks wrong |
 | `simcore22.tools.packet_capture` | Record what a launch monitor / simulator really sends (hex dump file) so it can be decoded |
 | `simcore22.tools.capture_screenshot` | Save one frame of the GSPro picture |
@@ -126,6 +162,8 @@ Run from the project folder, e.g. `.venv\Scripts\python -m simcore22.tools.bay_c
 - `simcore22/engine/ingestion/` - event bus; Foresight and TrackMan parsers (placeholders)
 - `simcore22/engine/{leaderboard,analyzer,handicap,scheduling,models,admin}/` - scoring
 - `simcore22/engine/round_log.py`, `state_writer.py` - the permanent log, the live JSON
+- `simcore22/web/` - the web UI: `app.py` (API + pages), `data.py` (round log -> what the screens
+  show), `demo.py` (fictional league), `static/` (HTML / CSS / JS, no build step)
 - `simcore22/tools/`, `simcore22/ui/` - diagnostics and console viewers
 - `examples/` - sample output files
 - `tests/` - `python -m pytest`

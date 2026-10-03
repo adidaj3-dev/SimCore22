@@ -1,0 +1,104 @@
+/* SimCore22 design tokens. Everything visual comes from these variables, so the two
+   themes (and any future white-label venue branding) are a matter of overriding them. */
+
+:root {
+  color-scheme: dark;
+
+  --font: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Inter Tight", "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+
+  /* surfaces, darkest to lightest */
+  --bg: #070C17;
+  --bg-2: #0B1323;
+  --surface: #101A2D;
+  --surface-2: #162240;
+  --surface-3: #1D2C4D;
+  --line: #22314F;
+  --line-soft: #1A2742;
+
+  /* text */
+  --text: #EAF0FB;
+  --text-2: #A8B5CF;
+  --text-3: #7184A7;
+
+  /* brand */
+  --brand: #34D399;
+  --brand-strong: #34D399;
+  --brand-ink: #03251A;
+  --brand-soft: rgba(52, 211, 153, .14);
+  --brand-grad: linear-gradient(135deg, #3BE3A4 0%, #12B886 100%);
+
+  /* leaderboard medals */
+  --gold: #F5C451;
+  --gold-soft: rgba(245, 196, 81, .14);
+  --silver: #C7D0E0;
+  --bronze: #DA9B6D;
+
+  /* golf scoring: red under par, blue over par (scoreboard convention) */
+  --under: #FF6F7D;
+  --under-soft: rgba(255, 111, 125, .15);
+  --over: #82B3FF;
+  --over-soft: rgba(130, 179, 255, .15);
+
+  /* status */
+  --ok: #34D399;
+  --warn: #F5A524;
+  --danger: #FF6070;
+  --info: #62A8FF;
+  --ok-soft: rgba(52, 211, 153, .14);
+  --warn-soft: rgba(245, 165, 36, .15);
+  --danger-soft: rgba(255, 96, 112, .15);
+  --info-soft: rgba(98, 168, 255, .15);
+
+  --radius-s: 8px;
+  --radius: 14px;
+  --radius-l: 22px;
+  --shadow: 0 1px 0 rgba(255, 255, 255, .04) inset, 0 14px 34px -14px rgba(0, 0, 0, .6);
+  --shadow-pop: 0 24px 60px -16px rgba(0, 0, 0, .75);
+  --ring: 0 0 0 3px rgba(52, 211, 153, .35);
+  --ease: cubic-bezier(.2, .7, .2, 1);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #F2F5FA;
+  --bg-2: #E9EEF6;
+  --surface: #FFFFFF;
+  --surface-2: #F5F8FC;
+  --surface-3: #EAEFF7;
+  --line: #DCE4EF;
+  --line-soft: #E7EDF5;
+
+  --text: #0D1A2F;
+  --text-2: #4B5C79;
+  --text-3: #7487A6;
+
+  --brand: #12B886;
+  --brand-strong: #0B8F68;
+  --brand-ink: #FFFFFF;
+  --brand-soft: rgba(18, 184, 134, .12);
+
+  --gold: #C9951A;
+  --gold-soft: rgba(201, 149, 26, .14);
+  --silver: #8793A8;
+  --bronze: #B8733F;
+
+  --under: #D62B40;
+  --under-soft: rgba(214, 43, 64, .10);
+  --over: #2D6BDB;
+  --over-soft: rgba(45, 107, 219, .10);
+
+  --ok: #0B8F68;
+  --warn: #B36F00;
+  --danger: #D62B40;
+  --info: #2D6BDB;
+  --ok-soft: rgba(18, 184, 134, .12);
+  --warn-soft: rgba(179, 111, 0, .12);
+  --danger-soft: rgba(214, 43, 64, .10);
+  --info-soft: rgba(45, 107, 219, .10);
+
+  --shadow: 0 1px 2px rgba(15, 30, 60, .06), 0 10px 28px -14px rgba(15, 30, 60, .18);
+  --shadow-pop: 0 24px 60px -18px rgba(15, 30, 60, .35);
+  --ring: 0 0 0 3px rgba(18, 184, 134, .30);
+}

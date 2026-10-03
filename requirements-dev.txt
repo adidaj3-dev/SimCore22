@@ -2,3 +2,4 @@
 
 pytest   # python -m pytest
 ruff     # ruff check simcore22 tests
+httpx2   # test client for the web API
