@@ -21,6 +21,16 @@ GSPro screen capture + OCR  ───────────────┼─�
   Falcon/Hawk packet yet - use `mvp/tools/falcon_packet_decoder.py` on a bay).
 - **Not wired up:** `mvp/engine/server/api.py` (web leaderboard), TrackMan.
 
+## Round log
+
+Every finished round is appended to `data/rounds.jsonl` - one line per player
+per round: hole-by-hole scores, where the scores came from
+(`scorecard_ocr_verified` = GSPro's own scorecard, `shot_tally` = our shot
+count), every shot captured, the stats, and the raw scorecard reading. It is
+append-only, survives restarts, and is git-ignored (it holds player names).
+This is not a database - it's the evidence for deciding what the database
+should store. Read it with `mvp.engine.round_log.read_rounds()`.
+
 ## Set up a bay PC (once)
 
 Double-click **`setup_bay.bat`**. It installs Python 3.14 and Tesseract

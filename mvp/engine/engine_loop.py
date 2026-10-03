@@ -1,10 +1,11 @@
 # mvp/engine/engine_loop.py
 import asyncio
 import logging
+import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
-from mvp.engine import config
+from mvp.engine import config, round_log
 from mvp.engine.logging_config import setup_logging
 from mvp.engine.ingestion.dispatcher import EventDispatcher
 from mvp.engine.ingestion.foresight.listener import ForesightLiveListener
@@ -149,7 +150,7 @@ class EngineRuntime:
 
             # Check inactivity timeout
             if datetime.now() - self.last_event_time > timedelta(minutes=1):
-                await self._finalize_round()
+                await self._finalize_round(reason="inactivity")
                 continue
 
             if event is None:
@@ -233,7 +234,7 @@ class EngineRuntime:
         holes_played = len(round_state.holes)
 
         if holes_played >= 9 or holes_played >= 18:
-            await self._finalize_round()
+            await self._finalize_round(reason="hole_count")
 
         # Handicap update
         now = datetime.now()
@@ -251,7 +252,7 @@ class EngineRuntime:
             )
             logger.info(f"[HANDICAP] Updated index for {player_name}: {new_index}")
 
-    def _apply_scorecard_overrides(self, session_state) -> None:
+    def _apply_scorecard_overrides(self, session_state) -> tuple[dict, dict]:
         """
         At round end, OCR the GSPro scorecard screen and - only where it reads
         as internally consistent (see ScorecardData.verified) - use its printed
@@ -259,19 +260,24 @@ class EngineRuntime:
         or doubled shot detection); the printed scorecard is GSPro's own math.
         Safe to call even if no scorecard is on screen: it just logs and the
         shot-tallied scores stand.
+
+        Returns (card, applied): the parsed scorecard ({} if none) and, for each
+        player whose scores were taken from it, their scorecard row. The round
+        log uses this to record where every score came from.
         """
+        applied: dict = {}
         try:
             from mvp.engine.ocr.capture_windows import capture_game_frame
 
             frame = capture_game_frame(self.window_title, self.monitor_index)
         except Exception:
             logger.info("[ROUND] Couldn't capture a frame for scorecard verification; using shot tally.")
-            return
+            return {}, applied
 
         card = read_scorecard_from_image(frame)
         if not card or not card.get("players"):
             logger.info("[ROUND] No scorecard on screen (or it didn't parse); using shot tally.")
-            return
+            return {}, applied
 
         for player_name, round_state in session_state.players.items():
             match = next(
@@ -288,18 +294,83 @@ class EngineRuntime:
                 if hole_num in card.get("par", {}):
                     hole_state.par = card["par"][hole_num]
 
+            applied[player_name] = match
             logger.info(f"[ROUND] Applied verified scorecard for {player_name}: "
                         f"{len(match['strokes'])} holes, total {match['total']}")
 
-    async def _finalize_round(self) -> None:
+        return card, applied
+
+    def _log_round(
+        self,
+        *,
+        round_id: str,
+        reason: str,
+        round_type: str,
+        player_name: str,
+        round_state,
+        course_name: str,
+        starting_index: int,
+        handicap_was_default: bool,
+        player_shots: list,
+        stats: dict,
+        card: dict,
+        card_row: dict | None,
+    ) -> None:
+        """
+        Append this player's round to data/rounds.jsonl. Never raises: a logging
+        problem (disk full, locked file) must not interrupt scoring.
+        """
+        try:
+            holes = [
+                {
+                    "hole": hole_num,
+                    "par": hole.par,
+                    "score_used": hole.gross_score or hole.strokes,
+                    "gross_score": hole.gross_score,
+                    "shot_tally": hole.strokes,
+                }
+                for hole_num, hole in sorted(round_state.holes.items())
+            ]
+            round_log.append_round({
+                "round_id": round_id,
+                "finished_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "finalize_reason": reason,
+                "round_type": round_type,
+                "player": player_name,
+                "course": course_name,
+                "holes_played": len(holes),
+                # Where the scores came from: GSPro's own verified scorecard, or
+                # our count of shots (which can miss or double-count a shot).
+                "score_source": "scorecard_ocr_verified" if card_row else "shot_tally",
+                "handicap_index_used": starting_index,
+                "handicap_was_default": handicap_was_default,
+                "hole_scores": holes,
+                "stats": stats,
+                "shot_devices": sorted({s.source_device for s in player_shots}),
+                "shots": player_shots,
+                "scorecard_ocr": {
+                    "course_name": card.get("course_name") if card else None,
+                    "par": card.get("par") if card else None,
+                    "stroke_index": card.get("stroke_index") if card else None,
+                    "players_on_card": [p["name"] for p in card.get("players", [])] if card else [],
+                    "matched_row": card_row,
+                },
+            })
+        except Exception:
+            logger.exception("[ROUND] Couldn't write round log entry (scoring unaffected).")
+
+    async def _finalize_round(self, reason: str = "unknown") -> None:
         if self.round_complete:
             return
 
         self.round_complete = True
-        logger.info("[ROUND] Finalizing round...")
+        logger.info(f"[ROUND] Finalizing round (trigger: {reason})...")
 
         session_state = engine.get_session_state()
-        self._apply_scorecard_overrides(session_state)
+        card, applied = self._apply_scorecard_overrides(session_state)
+        round_id = uuid.uuid4().hex
+        round_type = classify_round_by_time(datetime.now(), self.schedule_config)
+        course_name = (card.get("course_name") if card else None) or "Unknown"
 
         # Build scorecard + shots per player
         for player_name, round_state in session_state.players.items():
@@ -322,7 +393,8 @@ class EngineRuntime:
             player_shots = [s for s in self.shots if s.metadata.get("player_name") == player_name]
 
             starting_index = round_state.handicap_index
-            if starting_index is None:
+            handicap_was_default = starting_index is None
+            if handicap_was_default:
                 starting_index = DEFAULT_STARTING_INDEX
                 logger.info(f"[ROUND] {player_name} has no handicap on record; "
                             f"using default starting index {DEFAULT_STARTING_INDEX}.")
@@ -335,10 +407,25 @@ class EngineRuntime:
                 round_notes="Auto summary",
             )
 
+            self._log_round(
+                round_id=round_id,
+                reason=reason,
+                round_type=round_type,
+                player_name=player_name,
+                round_state=round_state,
+                course_name=course_name,
+                starting_index=starting_index,
+                handicap_was_default=handicap_was_default,
+                player_shots=player_shots,
+                stats=stats,
+                card=card,
+                card_row=applied.get(player_name),
+            )
+
             # Write summary JSON
             summary_payload = {
                 "player": player_name,
-                "course": "Unknown",
+                "course": course_name,
                 "holes": len(scorecard),
                 "gross": stats["gross_score"],
                 "score_vs_par": stats["gross_vs_par"],

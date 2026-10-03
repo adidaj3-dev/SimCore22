@@ -16,3 +16,6 @@ venv/
 captures/
 hud_preview.png
 gspro_capture.png
+
+# Real player names/scores logged by the engine - never commit
+/data/
