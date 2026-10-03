@@ -1,6 +1,11 @@
 """Settings. Each can be overridden with the environment variable shown."""
 import os
 
+# --- Display ------------------------------------------------------------------
+# Shown as the title of the live leaderboard (e.g. "Tuesday Night League"). Unset =
+# the board just says "Live Leaderboard" rather than inventing a league name.
+LEAGUE_NAME = os.environ.get("SIMCORE_LEAGUE_NAME", "").strip() or None
+
 # --- Launch-monitor shot feed ------------------------------------------------
 # OFF by default. Nothing has decoded a real Falcon/Hawk stream yet, so there is
 # no feed to connect to; turn it on by setting SIMCORE_FEED_PORT to the port

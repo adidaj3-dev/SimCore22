@@ -2,7 +2,7 @@
 """Turns the live session into the standings that screens show."""
 import logging
 
-from simcore22.engine import engine
+from simcore22.engine import config, engine
 from simcore22.engine.dashboard.live_dashboard import display_live_dashboard
 from simcore22.engine.leaderboard.leaderboard import Leaderboard
 from simcore22.engine.state_writer import write_leaderboard_state
@@ -28,8 +28,8 @@ class LeaderboardPublisher:
 
         write_leaderboard_state(
             course_name="Unknown",
-            league_name="Default League",
-            week=1,
+            league_name=config.LEAGUE_NAME,   # None until the venue sets one
+            week=None,                        # no league calendar yet
             format_name="Stroke Play",
             players=[
                 {

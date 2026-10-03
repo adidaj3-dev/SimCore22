@@ -23,7 +23,9 @@ console = Console()
 def render_leaderboard(data, player=None):
     console.clear()
 
-    header = f"{data['league_name']} • Week {data['week']}"
+    header = " • ".join(
+        part for part in (data.get("league_name") or "Live leaderboard", f"Week {data['week']}" if data.get("week") else None) if part
+    )
     sub = f"Course: {data['course_name']}   Format: {data['format']}"
 
     table = Table(

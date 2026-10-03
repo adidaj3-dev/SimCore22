@@ -72,8 +72,8 @@ def write_engine_status(status: Dict[str, Any]) -> None:
 
 def write_leaderboard_state(
     course_name: str,
-    league_name: str,
-    week: int,
+    league_name: Optional[str],
+    week: Optional[int],
     format_name: str,
     players: List[Dict[str, Any]],
 ) -> None:

@@ -45,7 +45,7 @@ def test_a_player_with_nothing_played_is_not_listed():
     assert _board(_session(Alex=[HoleState(1)])).get_standings() == []
 
 
-def test_standings_order_by_net_then_gross_and_expose_vs_par():
+def test_standings_rank_by_score_to_par_and_expose_it():
     board = _board(_session(
         Sam=[HoleState(1, par=4, gross_score=6)],
         Alex=[HoleState(1, par=4, gross_score=3)],
@@ -54,3 +54,20 @@ def test_standings_order_by_net_then_gross_and_expose_vs_par():
     assert [r["player_name"] for r in rows] == ["Alex", "Sam"]
     assert [r["position"] for r in rows] == [1, 2]
     assert [r["vs_par"] for r in rows] == [-1, 2]
+
+
+def test_a_player_through_fewer_holes_does_not_lead_just_for_having_a_lower_gross():
+    """Gross after 1 hole (5) beats gross after 3 holes (12) - but 3 pars is better than a bogey."""
+    board = _board(_session(
+        Early=[HoleState(1, par=4, gross_score=5)],
+        Steady=[HoleState(1, par=4, gross_score=4), HoleState(2, par=4, gross_score=4), HoleState(3, par=4, gross_score=4)],
+    ))
+    assert [r.player_name for r in board.get_standings()] == ["Steady", "Early"]
+
+
+def test_equal_to_par_ranks_the_player_who_has_played_more_holes_first():
+    board = _board(_session(
+        Short=[HoleState(1, par=4, gross_score=4)],
+        Long=[HoleState(1, par=4, gross_score=4), HoleState(2, par=4, gross_score=4)],
+    ))
+    assert [r.player_name for r in board.get_standings()] == ["Long", "Short"]

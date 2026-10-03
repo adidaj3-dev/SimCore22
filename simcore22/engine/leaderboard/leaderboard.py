@@ -30,7 +30,7 @@ class Leaderboard:
       - gross_score: sum of the scores (or shot counts) of holes played
       - thru: number of holes with a score or at least one shot
       - vs_par: gross against the par of those holes (par assumed 4 until known)
-      - net_score: gross_score - handicap_index
+      - net_score: gross_score - handicap_index (informational; ranking is by to-par)
       - points: placeholder (0.0) until league scoring formats exist
     """
 
@@ -77,11 +77,15 @@ class Leaderboard:
 
     def get_standings(self) -> List[PlayerLeaderboardRow]:
         """
-        Return players sorted by net_score, then gross_score.
+        Players ranked by score to par, then holes played (more first), then gross.
+
+        Not by gross: mid-round a player who has played fewer holes always has the
+        lower gross, so they would "lead". Handicap-adjusted ranking arrives with
+        league scoring formats.
         """
         return sorted(
             self._rows.values(),
-            key=lambda r: (r.net_score, r.gross_score),
+            key=lambda r: (r.vs_par, -r.thru, r.gross_score, r.player_name),
         )
 
     def to_dict(self) -> List[Dict[str, object]]:

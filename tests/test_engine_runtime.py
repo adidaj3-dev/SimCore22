@@ -32,6 +32,23 @@ def test_the_engine_refuses_to_connect_to_gspro_connect(sandbox):
         _runtime(feed_port=config.GSPRO_CONNECT_PORT)
 
 
+# ------------------------------------------- the leaderboard doesn't invent a league
+
+def test_the_published_board_does_not_invent_a_league_name_or_week(sandbox, play):
+    runtime = _runtime()
+    asyncio.run(play(runtime, "Alex", [(1, 4, 3, 4)]))
+    board = json.loads((sandbox / "state" / "leaderboard.json").read_text(encoding="utf-8"))
+    assert board["league_name"] is None and board["week"] is None   # not "Default League", not "Week 1"
+
+
+def test_a_configured_league_name_is_shown(sandbox, play, monkeypatch):
+    monkeypatch.setattr(config, "LEAGUE_NAME", "Thursday Night League")
+    runtime = _runtime()
+    asyncio.run(play(runtime, "Alex", [(1, 4, 3, 4)]))
+    board = json.loads((sandbox / "state" / "leaderboard.json").read_text(encoding="utf-8"))
+    assert board["league_name"] == "Thursday Night League"
+
+
 # ------------------------------------------------------ status heartbeat file
 
 def test_status_snapshot_describes_the_engine_and_the_round(sandbox, play):
