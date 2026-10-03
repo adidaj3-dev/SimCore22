@@ -18,6 +18,7 @@ STATE_DIR = str(Path(__file__).resolve().parents[2] / "state")
 LEADERBOARD_FILE = os.path.join(STATE_DIR, "leaderboard.json")
 ROUND_SUMMARY_FILE = os.path.join(STATE_DIR, "round_summary.json")
 ADMIN_SNAPSHOT_FILE = os.path.join(STATE_DIR, "admin_snapshot.json")
+ENGINE_STATUS_FILE = os.path.join(STATE_DIR, "engine_status.json")
 
 
 def _ensure_state_dir() -> None:
@@ -58,6 +59,15 @@ def read_state(path: str, attempts: int = 5) -> Optional[Dict[str, Any]]:
         except (PermissionError, json.JSONDecodeError):
             time.sleep(0.02)
     return None
+
+
+def write_engine_status(status: Dict[str, Any]) -> None:
+    """
+    Heartbeat for the web UI: whether the engine is running, what it can see,
+    what round is in progress. Rewritten every few seconds; a reader treats a
+    stale "updated_at" as "engine not running".
+    """
+    _write_json(ENGINE_STATUS_FILE, status)
 
 
 def write_leaderboard_state(

@@ -46,7 +46,7 @@ from simcore22.engine.ocr.window_capture import (
     make_dpi_aware,
 )
 
-GSPRO_CONNECT_PORT = 921
+GSPRO_CONNECT_PORT = config.GSPRO_CONNECT_PORT
 
 # A keyword only counts at the start of a word, so "e6" matches "E6Connect.exe"
 # but not the "e6" inside "RtkAudUService64.exe".

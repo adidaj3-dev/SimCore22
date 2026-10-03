@@ -37,6 +37,7 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(state_writer, "LEADERBOARD_FILE", str(state_dir / "leaderboard.json"))
     monkeypatch.setattr(state_writer, "ROUND_SUMMARY_FILE", str(state_dir / "round_summary.json"))
     monkeypatch.setattr(state_writer, "ADMIN_SNAPSHOT_FILE", str(state_dir / "admin_snapshot.json"))
+    monkeypatch.setattr(state_writer, "ENGINE_STATUS_FILE", str(state_dir / "engine_status.json"))
     monkeypatch.setattr(engine, "_session_state", engine.SessionState())
     monkeypatch.setattr(engine, "_handicap_book", {})
     return tmp_path

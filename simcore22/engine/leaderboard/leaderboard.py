@@ -7,6 +7,8 @@ from typing import Dict, List
 
 from simcore22.engine.engine import SessionState
 
+ASSUMED_PAR = 4  # for a hole whose par isn't known yet (no scorecard / score event)
+
 
 @dataclass
 class PlayerLeaderboardRow:
@@ -17,17 +19,19 @@ class PlayerLeaderboardRow:
     points: float
     thru: int
     handicap_index: int
+    par_played: int = 0    # par of the holes counted in `thru`
+    vs_par: int = 0        # gross_score - par_played
 
 
 class Leaderboard:
     """
-    Simple in-memory leaderboard built from engine SessionState.
+    In-memory leaderboard built from engine SessionState.
 
-    For MVP:
-      - gross_score: sum of strokes/gross_score across holes
+      - gross_score: sum of the scores (or shot counts) of holes played
+      - thru: number of holes with a score or at least one shot
+      - vs_par: gross against the par of those holes (par assumed 4 until known)
       - net_score: gross_score - handicap_index
-      - points: placeholder (0.0) for now
-      - thru: number of holes with a recorded score
+      - points: placeholder (0.0) until league scoring formats exist
     """
 
     def __init__(self) -> None:
@@ -37,36 +41,37 @@ class Leaderboard:
         rows: Dict[str, PlayerLeaderboardRow] = {}
 
         for player_name, round_state in session_state.players.items():
-            holes = list(round_state.holes.values())
-            if not holes:
-                continue
-
             gross_total = 0
+            par_played = 0
             holes_played = 0
 
-            for h in holes:
+            for h in round_state.holes.values():
                 if h.gross_score is not None:
                     gross_total += h.gross_score
-                    holes_played += 1
-                elif h.strokes is not None:
+                elif h.strokes > 0:
                     gross_total += h.strokes
-                    holes_played += 1
+                else:
+                    continue  # seen on the HUD, nothing hit yet
+                holes_played += 1
+                par_played += h.par if h.par is not None else ASSUMED_PAR
+
+            if holes_played == 0:
+                continue
 
             handicap_index = getattr(round_state, "handicap_index", 0) or 0
-            net_score = gross_total - int(handicap_index)
-
             team_name = getattr(round_state, "team_name", "") or ""
 
-            row = PlayerLeaderboardRow(
+            rows[player_name] = PlayerLeaderboardRow(
                 player_name=player_name,
                 team_name=team_name,
                 gross_score=gross_total,
-                net_score=net_score,
+                net_score=gross_total - int(handicap_index),
                 points=0.0,  # placeholder for now
                 thru=holes_played,
                 handicap_index=int(handicap_index),
+                par_played=par_played,
+                vs_par=gross_total - par_played,
             )
-            rows[player_name] = row
 
         self._rows = rows
 
@@ -88,6 +93,7 @@ class Leaderboard:
                 "team_name": row.team_name,
                 "gross_score": row.gross_score,
                 "net_score": row.net_score,
+                "vs_par": row.vs_par,
                 "points": row.points,
                 "thru": row.thru,
                 "handicap_index": row.handicap_index,

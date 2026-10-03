@@ -26,10 +26,10 @@ leaderboards for leagues and tournaments. Windows, Python 3.12+ (developed on
 ## How it works
 
 ```
-Foresight listener (placeholder protocol) ─┐
+Launch-monitor feed (optional, off) ───────┐
 GSPro screen capture + OCR  ───────────────┼─► EventDispatcher ─► engine ─► leaderboard
    - player / hole tracking                                          │        handicap
-   - end-of-round scorecard                                          │        analyzer
+   - end-of-round scorecard ─► rounds (finish / save / reset)        │        analyzer
                                                                      ├─► state/*.json      (live, overwritten)
                                                                      └─► data/rounds.jsonl (permanent log)
 ```
@@ -37,6 +37,12 @@ GSPro screen capture + OCR  ───────────────┼─�
 Until there is official API access, reading GSPro's screen is the bridge. When a
 real data feed exists it plugs in as one more event source; nothing downstream
 changes.
+
+The launch-monitor feed is **off by default**: its protocol is a placeholder, and
+GSPro's own port (921) must never be connected to - GSPro accepts a single
+client, so the engine would take FSX's place. Turn the feed on only after
+`packet_capture` has found the launch monitor's real port
+(`SIMCORE_FEED_PORT`); the engine refuses port 921.
 
 ## Set up a bay PC (once)
 
@@ -110,7 +116,10 @@ Run from the project folder, e.g. `.venv\Scripts\python -m simcore22.tools.bay_c
 
 ## Project layout
 
-- `simcore22/engine/engine_loop.py` - entry point; wires ingestion → engine → outputs
+- `simcore22/engine/engine_loop.py` - entry point; connects sources → engine → outputs
+- `simcore22/engine/rounds.py` - round lifecycle: when it ends, what's saved, what carries over
+- `simcore22/engine/scorecard_watch.py`, `console.py`, `publish.py` - spotting the end-of-round
+  card, typed commands, standings → screens
 - `simcore22/engine/engine.py` - live session state (players, holes, handicaps)
 - `simcore22/engine/ocr/` - window capture, scorecard reader, HUD reading
   (`layouts/*.json` are fractions of the game picture)

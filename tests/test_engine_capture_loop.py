@@ -43,7 +43,7 @@ def stand_in_window(title, color, width=480, height=300):
 
 def _run_loop(title, seconds=0.8):
     """Run the engine's real capture loop for a moment against a stub OCR listener."""
-    runtime = EngineRuntime("127.0.0.1", 921, ocr_enabled=True, window_title=title, ocr_poll_interval=0.1)
+    runtime = EngineRuntime(ocr_enabled=True, window_title=title, ocr_poll_interval=0.1)
     runtime.ocr_listener = _RecordingListener()
 
     async def go():
@@ -56,30 +56,33 @@ def _run_loop(title, seconds=0.8):
             pass
 
     asyncio.run(go())
-    return runtime.ocr_listener.frames
+    return runtime.ocr_listener.frames, runtime.capture_state
 
 
 def test_loop_feeds_ocr_the_window_picture(live_desktop):
     title = "SimCoreLoopTest-OK"
     with stand_in_window(title, "#2a6f2a", 480, 300):
-        frames = _run_loop(title)
+        frames, capture = _run_loop(title)
     assert len(frames) >= 3
     assert frames[0].shape[:2] == (300, 480)  # the picture only, borders cropped
+    assert capture["state"] == "capturing" and capture["last_frame_at"]  # what the status file reports
 
 
 def test_loop_waits_quietly_when_the_game_isnt_open(caplog):
     with caplog.at_level(logging.INFO, logger="simcore22.engine.engine_loop"):
-        frames = _run_loop("zzz-no-such-window-55555")
+        frames, capture = _run_loop("zzz-no-such-window-55555")
     assert frames == []
     waiting = [r for r in caplog.records if "Waiting for" in r.getMessage()]
     assert len(waiting) == 1  # one line, not one per poll
+    assert capture["state"] == "waiting_for_window" and capture["last_frame_at"] is None
 
 
 def test_loop_warns_once_and_skips_ocr_on_black_frames(live_desktop, caplog):
     title = "SimCoreLoopTest-BLACK"
     with stand_in_window(title, "#000000"):
         with caplog.at_level(logging.INFO, logger="simcore22.engine.engine_loop"):
-            frames = _run_loop(title)
+            frames, capture = _run_loop(title)
     assert frames == []  # never ran OCR on a black frame
     black = [r for r in caplog.records if "exclusive fullscreen" in r.getMessage()]
     assert len(black) == 1
+    assert capture["state"] == "black_frames"

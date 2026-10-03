@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 import pytest
 
-from simcore22.engine import engine, engine_loop
+from simcore22.engine import engine, scorecard_watch
 from simcore22.engine.engine_loop import EngineRuntime
 from simcore22.engine.ocr.tesseract_setup import find_tesseract
 from simcore22.engine.models.events import (
@@ -26,7 +26,7 @@ from simcore22.engine.models.events import (
 
 
 def _runtime(**kwargs):
-    return EngineRuntime("127.0.0.1", 921, ocr_enabled=False, console_commands=False, **kwargs)
+    return EngineRuntime(ocr_enabled=False, console_commands=False, **kwargs)
 
 
 def _card(name="JEFF", strokes=None, verified=True, complete=True):
@@ -56,7 +56,7 @@ def test_an_18_hole_round_is_not_cut_off_at_hole_9(sandbox, logged_rounds):
             emit(ScoreEvent(timestamp=datetime.now(), player_name="Jeff", hole_number=hole, gross_score=4, par=4))
         await asyncio.sleep(0.8)  # let the engine drain every event
         assert logged_rounds() == []  # holes 9 and 18 came and went; no round ended
-        await runtime._finalize_round(reason="scorecard", card=_card(strokes={h: 4 for h in range(1, 19)}))
+        runtime.rounds.finalize(reason="scorecard", card=_card(strokes={h: 4 for h in range(1, 19)}))
         loop_task.cancel()
 
     asyncio.run(go())
@@ -71,9 +71,9 @@ def test_every_round_is_logged_not_just_the_first(sandbox, logged_rounds, play):
 
     async def go():
         await play(runtime, "Jeff", [(1, 4, 3, 4), (2, 3, 2, 3)])
-        await runtime._finalize_round(reason="round_end_event")
+        runtime.rounds.finalize(reason="round_end_event")
         await play(runtime, "Jeff", [(1, 4, 4, 5), (2, 3, 3, 3)])  # same player, next round
-        await runtime._finalize_round(reason="round_end_event")
+        runtime.rounds.finalize(reason="round_end_event")
 
     asyncio.run(go())
 
@@ -90,7 +90,7 @@ def test_the_current_player_carries_into_the_next_round(sandbox, play):
 
     async def go():
         await play(runtime, "Jeff", [(1, 4, 3, 4)])
-        await runtime._finalize_round(reason="round_end_event")
+        runtime.rounds.finalize(reason="round_end_event")
         # next round: HUD shows hole 1 again but does NOT re-announce the player
         engine.handle_hole_event(HoleEvent(timestamp=datetime.now(), hole_number=1))
         await runtime._handle_shot_event(ShotEvent(source_device="FAKE", timestamp=datetime.now(), ball_speed=140.0))
@@ -116,7 +116,7 @@ def _watch_scorecard_reads(monkeypatch, card):
         reads.append(1)
         return dict(card)
 
-    monkeypatch.setattr(engine_loop, "read_scorecard_from_image", fake_read)
+    monkeypatch.setattr(scorecard_watch, "read_scorecard_from_image", fake_read)
     return reads
 
 
@@ -126,18 +126,18 @@ def test_the_end_of_round_scorecard_finishes_the_round_once(sandbox, logged_roun
 
     async def go():
         await play(runtime, "Jeff", [(1, 4, 3, 4), (2, 3, 2, 3)])
-        await runtime._check_for_scorecard(_bright_panel())  # 1st poll: could be animating in
+        await runtime.scorecard_watcher.check(_bright_panel())  # 1st poll: could be animating in
         assert reads == []
-        await runtime._check_for_scorecard(_bright_panel())  # 2nd poll: read it
+        await runtime.scorecard_watcher.check(_bright_panel())  # 2nd poll: read it
         assert len(reads) == 1
         for _ in range(3):                                   # card stays on screen
-            await runtime._check_for_scorecard(_bright_panel())
+            await runtime.scorecard_watcher.check(_bright_panel())
         assert len(reads) == 1                               # ...but is not read again
         for _ in range(3):                                   # card closed
-            await runtime._check_for_scorecard(_dark_scene())
+            await runtime.scorecard_watcher.check(_dark_scene())
         await play(runtime, "Jeff", [(1, 4, 2, 4)])          # next round starts
         for _ in range(2):                                   # next end-of-round card
-            await runtime._check_for_scorecard(_bright_panel())
+            await runtime.scorecard_watcher.check(_bright_panel())
 
     asyncio.run(go())
 
@@ -155,8 +155,8 @@ def test_the_real_gspro_scorecard_photo_ends_and_logs_a_round_end_to_end(sandbox
     frame = cv2.imread("simcore22/engine/ocr/samples/scorecard.png")
 
     async def go():
-        await runtime._check_for_scorecard(frame)
-        await runtime._check_for_scorecard(frame)
+        await runtime.scorecard_watcher.check(frame)
+        await runtime.scorecard_watcher.check(frame)
 
     asyncio.run(go())
 
@@ -178,7 +178,7 @@ def test_a_scorecard_without_play_again_is_a_mid_round_peek_and_is_ignored(sandb
     async def go():
         await play(runtime, "Jeff", [(1, 4, 3, 4)])
         for _ in range(3):
-            await runtime._check_for_scorecard(_bright_panel())
+            await runtime.scorecard_watcher.check(_bright_panel())
 
     asyncio.run(go())
     assert logged_rounds() == []                       # the round did not end
@@ -188,11 +188,11 @@ def test_a_scorecard_without_play_again_is_a_mid_round_peek_and_is_ignored(sandb
 def test_a_bright_screen_that_isnt_a_scorecard_is_not_reread_every_second(sandbox, play, monkeypatch):
     runtime = _runtime()
     reads = []
-    monkeypatch.setattr(engine_loop, "read_scorecard_from_image", lambda frame: reads.append(1) or {})
+    monkeypatch.setattr(scorecard_watch, "read_scorecard_from_image", lambda frame: reads.append(1) or {})
 
     async def go():
         for _ in range(8):  # bright sky for 8 polls
-            await runtime._check_for_scorecard(_bright_panel())
+            await runtime.scorecard_watcher.check(_bright_panel())
 
     asyncio.run(go())
     assert len(reads) == 1  # tried once, then backed off
@@ -201,7 +201,7 @@ def test_a_bright_screen_that_isnt_a_scorecard_is_not_reread_every_second(sandbo
 def test_a_round_is_recorded_from_the_scorecard_even_if_live_tracking_saw_nothing(sandbox, logged_rounds):
     """HUD OCR uncalibrated -> no player/hole/shot events at all. The card alone still gives the round."""
     runtime = _runtime()
-    asyncio.run(runtime._finalize_round(reason="scorecard", card=_card(name="JOESLAT", strokes={1: 4, 2: 3})))
+    runtime.rounds.finalize(reason="scorecard", card=_card(name="JOESLAT", strokes={1: 4, 2: 3}))
 
     (record,) = logged_rounds()
     assert record["player"] == "JOESLAT"
@@ -212,7 +212,7 @@ def test_a_round_is_recorded_from_the_scorecard_even_if_live_tracking_saw_nothin
 
 def test_an_unreadable_scorecard_with_no_other_data_records_nothing(sandbox, logged_rounds):
     runtime = _runtime()
-    results = asyncio.run(runtime._finalize_round(reason="scorecard", card=_card(verified=False)))
+    results = runtime.rounds.finalize(reason="scorecard", card=_card(verified=False))
     assert results == []
     assert logged_rounds() == []
 
@@ -253,7 +253,7 @@ def test_after_ending_early_the_next_round_starts_clean(sandbox, logged_rounds, 
     asyncio.run(go())
     first, second = logged_rounds()
     assert (first["stats"]["gross_score"], second["stats"]["gross_score"]) == (4, 6)
-    assert runtime.shots == []
+    assert runtime.rounds.shots == []
 
 
 def test_end_with_no_round_in_progress_says_so(sandbox, logged_rounds):
@@ -304,7 +304,7 @@ def test_walking_away_saves_the_round_as_abandoned(sandbox, logged_rounds, play)
     async def go():
         loop_task = asyncio.create_task(runtime._engine_loop())
         await play(runtime, "Jeff", [(1, 4, 3, 4), (2, 3, 2, 3)])
-        runtime.last_event_time = datetime.now()
+        runtime.rounds.touch()
         await asyncio.sleep(3.5)  # the loop checks once a second
         loop_task.cancel()
 
@@ -331,9 +331,9 @@ def test_an_empty_bay_never_logs_anything_however_long_it_sits_idle(sandbox, log
 def _league_runtime():
     runtime = _runtime()
     now = datetime.now()
-    runtime.schedule_config.league_windows = [(now - timedelta(hours=1), now + timedelta(hours=1))]
-    runtime.league_state.current_round_number = 1   # round 0 is the practice round
-    runtime.league_config.rounds_per_update = 1
+    runtime.rounds.schedule_config.league_windows = [(now - timedelta(hours=1), now + timedelta(hours=1))]
+    runtime.rounds.league_state.current_round_number = 1   # round 0 is the practice round
+    runtime.rounds.league_config.rounds_per_update = 1
     return runtime
 
 
@@ -342,7 +342,7 @@ def test_a_completed_league_round_updates_the_handicap_and_it_carries_over(sandb
 
     async def go():
         await play(runtime, "Jeff", [(1, 4, 3, 4), (2, 3, 2, 3)])
-        await runtime._finalize_round(reason="round_end_event")
+        runtime.rounds.finalize(reason="round_end_event")
 
     asyncio.run(go())
 
@@ -377,7 +377,7 @@ def test_unknown_par_does_not_crash_the_stats(sandbox, logged_rounds, play):
 
     async def go():
         await play(runtime, "Jeff", [(1, 4, 3, None), (2, 3, 2, None)])
-        await runtime._finalize_round(reason="round_end_event")
+        runtime.rounds.finalize(reason="round_end_event")
 
     asyncio.run(go())
     (record,) = logged_rounds()
@@ -387,23 +387,23 @@ def test_unknown_par_does_not_crash_the_stats(sandbox, logged_rounds, play):
 
 def test_one_players_failure_does_not_lose_the_others_or_block_the_next_round(sandbox, logged_rounds, play, monkeypatch):
     runtime = _runtime()
-    real = runtime._compute_player
+    real = runtime.rounds._compute_player
 
     def flaky(player_name, round_state, status):
         if player_name == "Sam":
             raise RuntimeError("bad data")
         return real(player_name, round_state, status)
 
-    monkeypatch.setattr(runtime, "_compute_player", flaky)
+    monkeypatch.setattr(runtime.rounds, "_compute_player", flaky)
 
     async def go():
         await play(runtime, "Jeff", [(1, 4, 3, 4)])
         await play(runtime, "Sam", [(1, 4, 5, 6)])
-        await runtime._finalize_round(reason="round_end_event")
+        runtime.rounds.finalize(reason="round_end_event")
 
     asyncio.run(go())
     assert [r["player"] for r in logged_rounds()] == ["Jeff"]
-    assert runtime.shots == []                       # reset happened regardless
+    assert runtime.rounds.shots == []                       # reset happened regardless
     assert not engine.get_session_state().players.get("Sam", None) or \
         not engine.get_session_state().players["Sam"].holes
 

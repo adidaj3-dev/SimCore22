@@ -1,10 +1,18 @@
-# WebSocket listener for SimCore22 → GSPro
-GSPro_WS_HOST = "0.0.0.0"
-GSPro_WS_PORT = 8765
+"""Settings. Each can be overridden with the environment variable shown."""
+import os
 
-# GSPro Connect TCP endpoint
-GSPRO_TCP_HOST = "127.0.0.1"
-GSPRO_TCP_PORT = 921
+# --- Launch-monitor shot feed ------------------------------------------------
+# OFF by default. Nothing has decoded a real Falcon/Hawk stream yet, so there is
+# no feed to connect to; turn it on by setting SIMCORE_FEED_PORT to the port
+# `python -m simcore22.tools.bay_check` / `packet_capture` found on the bay.
+FEED_HOST = os.environ.get("SIMCORE_FEED_HOST", "127.0.0.1")
+_feed_port = os.environ.get("SIMCORE_FEED_PORT", "").strip()
+FEED_PORT = int(_feed_port) if _feed_port else None
+
+# GSPro Connect: GSPro itself LISTENS here and the launch-monitor software
+# connects to it. The engine must never connect to this port - GSPro accepts a
+# single client, so we could take FSX's place and break the bay.
+GSPRO_CONNECT_PORT = 921
 
 # --- Screen capture ---------------------------------------------------------
 # Text that appears in GSPro's window title. The capture crops to that
@@ -14,8 +22,6 @@ GSPRO_TCP_PORT = 921
 # (or edit the default below).
 # Set it to "" to fall back to capturing a whole monitor (GSPro must then
 # fill that monitor exactly, or the OCR layouts will be off).
-import os
-
 CAPTURE_WINDOW_TITLE = os.environ.get("SIMCORE_WINDOW_TITLE", "GSPro")
 CAPTURE_MONITOR_INDEX = int(os.environ.get("SIMCORE_MONITOR", "1"))  # only used when title is ""
 

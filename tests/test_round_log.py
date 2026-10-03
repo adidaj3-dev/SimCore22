@@ -3,13 +3,13 @@ import json
 from datetime import datetime
 
 
-from simcore22.engine import engine_loop, round_log
+from simcore22.engine import round_log, rounds
 from simcore22.engine.engine_loop import EngineRuntime
 from simcore22.engine.models.events import ShotEvent
 
 
 def _runtime(**kwargs):
-    return EngineRuntime("127.0.0.1", 921, ocr_enabled=False, console_commands=False, **kwargs)
+    return EngineRuntime(ocr_enabled=False, console_commands=False, **kwargs)
 
 
 # --------------------------------------------------------------- the file itself
@@ -83,7 +83,7 @@ def _two_player_round(play, reason, card=None):
     async def go():
         await play(runtime, "Jeff", [(1, 4, 3, 4), (2, 3, 2, 3)])
         await play(runtime, "Sam", [(1, 4, 5, 6), (2, 3, 3, 4)])
-        await runtime._finalize_round(reason=reason, card=card)
+        runtime.rounds.finalize(reason=reason, card=card)
 
     asyncio.run(go())
     return runtime
@@ -102,7 +102,7 @@ def test_finishing_a_round_logs_one_line_per_player(sandbox, logged_rounds, play
     assert jeff["score_source"] == "shot_tally"
     assert jeff["holes_played"] == 2
     assert jeff["handicap_was_default"] is True
-    assert jeff["handicap_index_used"] == engine_loop.DEFAULT_STARTING_INDEX
+    assert jeff["handicap_index_used"] == rounds.DEFAULT_STARTING_INDEX
     assert jeff["shot_devices"] == ["FAKE"]
     assert len(jeff["shots"]) == 5   # only HIS 3 + 2 shots, not Sam's
     assert len(by_player["Sam"]["shots"]) == 8
