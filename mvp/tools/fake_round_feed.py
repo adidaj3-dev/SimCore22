@@ -1,4 +1,4 @@
-﻿# mvp/tools/fake_round_feed.py
+# mvp/tools/fake_round_feed.py
 """
 Demo data with no hardware: plays a made-up 9-hole round and writes the state
 files (state/*.json) the viewers in mvp/ui read. Handy for developing a

@@ -1,4 +1,4 @@
-﻿# mvp/engine/state_writer.py
+# mvp/engine/state_writer.py
 """
 Writes the JSON files the on-screen leaderboards and viewers read:
 state/leaderboard.json, state/round_summary.json, state/admin_snapshot.json.
