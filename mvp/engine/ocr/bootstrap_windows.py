@@ -7,7 +7,8 @@ from pathlib import Path
 from mvp.engine.ingestion.dispatcher import EventDispatcher
 from mvp.engine.ocr.round_start_ocr import RoundStartOCR
 from mvp.engine.ocr.ocr_listener import OCRHudListener
-from mvp.engine.ocr.capture_windows import capture_full_hud_frame_from_monitor
+from mvp.engine import config
+from mvp.engine.ocr.capture_windows import capture_game_frame
 
 # Attach Rich dashboard listener
 from mvp.ui.rich_dashboard import update_dashboard
@@ -60,7 +61,12 @@ class WindowsOCROnlyBootstrap:
         logger.info(f"Starting Windows capture loop on monitor {self.monitor_index}")
 
         while self._running:
-            frame = capture_full_hud_frame_from_monitor(self.monitor_index)
+            try:
+                frame = capture_game_frame(config.CAPTURE_WINDOW_TITLE, self.monitor_index)
+            except Exception as exc:  # GSPro not open yet, etc. - keep waiting
+                logger.warning(f"Capture not ready: {exc}")
+                await asyncio.sleep(self.poll_interval)
+                continue
             cv2.imwrite("hud_preview.png", frame)
             await self.listener.process_frame(frame)
             await asyncio.sleep(self.poll_interval)

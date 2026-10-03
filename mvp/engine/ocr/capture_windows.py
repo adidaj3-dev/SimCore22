@@ -3,6 +3,8 @@ import cv2
 import mss
 import numpy as np
 
+from .window_capture import capture_window_frame
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,11 +38,25 @@ def _grab_monitor(monitor_index: int = 1) -> np.ndarray:
 
 def capture_full_hud_frame_from_monitor(monitor_index: int = 1) -> np.ndarray:
     """
-    Windows-only HUD capture entry point.
+    Whole-monitor capture. Only correct if GSPro fills that monitor exactly;
+    prefer capture_game_frame().
     """
     try:
         return _grab_monitor(monitor_index)
     except Exception:
         logger.exception("Failed to capture frame from monitor")
         raise
-        
+
+
+def capture_game_frame(window_title: str = "", monitor_index: int = 1) -> np.ndarray:
+    """
+    The frame the OCR layouts are measured against.
+
+    With a window title: just that window's drawable area (borders, title bar
+    and screen position don't matter). Raises GameWindowNotFound if it isn't
+    open - callers treat that as "wait", not as an error. Without a title:
+    the whole monitor, as before.
+    """
+    if window_title:
+        return capture_window_frame(window_title)
+    return capture_full_hud_frame_from_monitor(monitor_index)

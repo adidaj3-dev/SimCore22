@@ -7,27 +7,27 @@ isn't working. It never changes anything - it only looks.
     python -m mvp.tools.bay_check --delay 0
 
 It reports, and saves to captures/<timestamp>/ :
-  1. Your monitors and their resolution / DPI scaling
-  2. A screenshot of every monitor, and whether each one is BLACK
-     (black = the game is in exclusive fullscreen; switch it to borderless)
-  3. Which GSPro / Foresight / launch-monitor programs are running, their
-     windows, and whether each window is borderless-fullscreen
-  4. Which network ports those programs are listening on / connected to
-     (this is where a launch monitor's data path shows up - e.g. GSPro Connect
-     should be LISTENING on 127.0.0.1:921)
+  1. Your monitors and a screenshot of each, and whether each one is BLACK
+  2. Which GSPro / Foresight / launch-monitor programs are running and their
+     windows (borderless or with a title bar)
+  3. Which network ports those programs are listening on / connected to
+     (e.g. GSPro Connect should be LISTENING on 127.0.0.1:921)
+  4. The CAPTURE TARGET: the GSPro window the engine will crop to, saved as
+     game_window.png (should be just the game picture - no title bar, borders
+     or other windows). If GSPro's title isn't found, it lists candidates.
+  5. A verdict. Black capture = exclusive fullscreen; switch to borderless.
 
 Zip up the captures/<timestamp>/ folder and send it back for calibration.
 """
 from __future__ import annotations
 
 import argparse
-import ctypes
 import json
 import re
 import subprocess
 import sys
 import time
-from ctypes import wintypes
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
@@ -35,6 +35,16 @@ from typing import Dict, List
 import cv2
 import mss
 import numpy as np
+
+from mvp.engine import config
+from mvp.engine.ocr.window_capture import (
+    _NOT_THE_GAME,
+    find_window,
+    grab_window,
+    list_windows,
+    looks_black,
+    make_dpi_aware,
+)
 
 GSPRO_CONNECT_PORT = 921
 
@@ -47,50 +57,6 @@ _WATCH = re.compile(
 
 
 # ---------------------------------------------------------------- Windows bits
-
-def _make_dpi_aware() -> None:
-    """Without this Windows lies about pixel sizes on scaled (125%/150%) displays."""
-    try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)
-    except Exception:
-        try:
-            ctypes.windll.user32.SetProcessDPIAware()
-        except Exception:
-            pass
-
-
-def _list_windows() -> List[Dict]:
-    """Visible top-level windows: title, owning process id, rectangle, style."""
-    user32 = ctypes.windll.user32
-    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-    out: List[Dict] = []
-
-    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-    def visit(hwnd, _lparam):
-        if not user32.IsWindowVisible(hwnd):
-            return True
-        length = user32.GetWindowTextLengthW(hwnd)
-        if length == 0:
-            return True
-        buf = ctypes.create_unicode_buffer(length + 1)
-        user32.GetWindowTextW(hwnd, buf, length + 1)
-        rect = wintypes.RECT()
-        user32.GetWindowRect(hwnd, ctypes.byref(rect))
-        pid = wintypes.DWORD()
-        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        style = user32.GetWindowLongW(hwnd, -16)  # GWL_STYLE
-        out.append({
-            "title": buf.value,
-            "pid": pid.value,
-            "left": rect.left, "top": rect.top,
-            "width": rect.right - rect.left, "height": rect.bottom - rect.top,
-            "has_title_bar": bool(style & 0x00C00000),  # WS_CAPTION
-        })
-        return True
-
-    user32.EnumWindows(visit, 0)
-    return out
-
 
 def _process_names() -> Dict[int, str]:
     """pid -> exe name, via tasklist (no extra dependencies)."""
@@ -150,9 +116,47 @@ def check_monitors(out_dir: Path) -> List[Dict]:
     return report
 
 
+def check_capture_target(out_dir: Path) -> Dict:
+    """
+    What the engine will actually capture: the configured window's drawable
+    area. Saves it as game_window.png so you can confirm it's just the game.
+    """
+    title = config.CAPTURE_WINDOW_TITLE
+    result: Dict = {"title_setting": title, "found": False}
+    windows = list_windows()
+    win = find_window(title, windows)
+
+    if win is None:
+        # Help pick the right title: every window big enough to be a game.
+        result["candidates"] = sorted(
+            {w.title for w in windows
+             if w.client_width >= 200 and w.client_height >= 150 and not w.minimized
+             and w.exe.lower() not in _NOT_THE_GAME},
+        )
+        return result
+
+    frame = grab_window(win)
+    path = out_dir / "game_window.png"
+    cv2.imwrite(str(path), frame)
+    result.update({
+        "found": True,
+        "title": win.title,
+        "exe": win.exe,
+        "outer_size": f"{win.width}x{win.height}",
+        "picture_size": f"{win.client_width}x{win.client_height}",
+        "picture_position": f"({win.client_left},{win.client_top})",
+        "has_title_bar": win.has_title_bar,
+        "borderless": win.frame_thickness == 0,
+        "cropped_off": f"{win.width - win.client_width}x{win.height - win.client_height}",
+        "looks_black": looks_black(frame),
+        "file": path.name,
+    })
+    return result
+
+
 def check_programs() -> Dict:
     names = _process_names()
-    windows = _list_windows()
+    windows = [asdict(w) for w in list_windows()]
     conns = _connections()
 
     watched_pids = {pid for pid, exe in names.items() if _is_watched(exe)}
@@ -195,7 +199,7 @@ def main() -> int:
         print("bay_check is for the Windows bay PC.")
         return 1
 
-    _make_dpi_aware()
+    make_dpi_aware()
     out_dir = Path("captures") / datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -210,6 +214,7 @@ def main() -> int:
 
     monitors = check_monitors(out_dir)
     programs = check_programs()
+    target = check_capture_target(out_dir)
 
     print("\n1) MONITORS + SCREENSHOTS")
     for m in monitors:
@@ -239,19 +244,40 @@ def main() -> int:
         remote = c["remote"] if c["state"] != "LISTENING" else ""
         print(f"   {c['exe']:<22} {c['proto']} {c['state']:<12} {c['local']:<22} {remote}")
 
-    print("\n4) VERDICT")
-    black = [m for m in monitors[1:] if m["looks_black"]]
-    if black:
-        print("   Screen capture is returning BLACK for monitor(s) "
-              f"{', '.join(str(m['index']) for m in black)}.")
-        print("   Cause: the game is in exclusive fullscreen. Switch GSPro (and FSX)")
-        print("   to 'Windowed' / 'Borderless windowed' in their display settings, then re-run.")
+    print(f"\n4) CAPTURE TARGET  (window title contains '{target['title_setting']}')")
+    if target["found"]:
+        frame_note = ("borderless - picture fills the window" if target["borderless"]
+                      else f"title bar/borders cropped off ({target['cropped_off']} px, wide x tall)")
+        print(f"   FOUND  '{target['title'][:50]}' ({target['exe']})")
+        print(f"          window {target['outer_size']}, picture {target['picture_size']} "
+              f"at {target['picture_position']}; {frame_note}")
+        print(f"          what the OCR will see -> {target['file']}")
     else:
-        print("   Screen capture is returning real pixels. Open the PNGs to confirm")
-        print("   they show the GSPro screen, then run the OCR on them.")
+        print("   NOT FOUND. If GSPro is open, its title doesn't contain that text.")
+        print("   Windows that could be it (set SIMCORE_WINDOW_TITLE to part of the right one):")
+        for title in target.get("candidates", []):
+            print(f"     - {title[:70]}")
+
+    print("\n5) VERDICT")
+    black_monitors = [m for m in monitors[1:] if m["looks_black"]]
+    if target["found"] and target["looks_black"]:
+        print("   The GSPro window is capturing as BLACK.")
+        print("   Cause: exclusive fullscreen. Switch GSPro to 'Windowed' / 'Borderless")
+        print("   windowed' in its display settings, then re-run.")
+    elif target["found"]:
+        print("   Window capture works. Open game_window.png: it should be only the game")
+        print("   picture. If so, capture is ready and OCR calibration is the next step.")
+    elif black_monitors:
+        print("   GSPro window not found, and monitor capture is BLACK for monitor(s) "
+              f"{', '.join(str(m['index']) for m in black_monitors)}.")
+        print("   Open GSPro (windowed/borderless, not minimized) and re-run.")
+    else:
+        print("   Screen capture returns real pixels, but the GSPro window wasn't found.")
+        print("   Open GSPro (not minimized) and re-run, or fix the window title above.")
 
     (out_dir / "report.json").write_text(
-        json.dumps({"monitors": monitors, "programs": programs}, indent=2), encoding="utf-8")
+        json.dumps({"monitors": monitors, "programs": programs, "capture_target": target}, indent=2),
+        encoding="utf-8")
     print(f"\nSaved everything to: {out_dir.resolve()}")
     print("Send that whole folder back for calibration.")
     return 0

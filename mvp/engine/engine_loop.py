@@ -43,7 +43,8 @@ class EngineRuntime:
         foresight_host: str,
         foresight_port: int,
         ocr_enabled: bool = True,
-        monitor_index: int = 1,
+        window_title: str = config.CAPTURE_WINDOW_TITLE,
+        monitor_index: int = config.CAPTURE_MONITOR_INDEX,
         ocr_poll_interval: float = 1.0,
     ):
         self.dispatcher = EventDispatcher()
@@ -57,6 +58,7 @@ class EngineRuntime:
             foresight_host, foresight_port, self.dispatcher
         )
 
+        self.window_title = window_title
         self.monitor_index = monitor_index
         self.ocr_poll_interval = ocr_poll_interval
         self.ocr_listener: Optional[OCRHudListener] = None
@@ -96,21 +98,45 @@ class EngineRuntime:
 
     async def _ocr_capture_loop(self) -> None:
         """
-        Owns screen capture and feeds frames to the OCR listener. Capture
-        failures (no monitor, GSPro in exclusive fullscreen, etc.) are logged
-        and retried rather than killing the whole engine - run
-        `python -m mvp.tools.bay_check` to diagnose them.
-        """
-        # Imported here, not at module load, so this module still imports on
-        # non-Windows machines (mss/cv2 are fine everywhere, but this keeps
-        # the Windows-only capture call isolated).
-        from mvp.engine.ocr.capture_windows import capture_full_hud_frame_from_monitor
+        Owns screen capture and feeds frames to the OCR listener.
 
-        logger.info(f"Starting OCR capture loop on monitor {self.monitor_index}")
+        - GSPro not open / minimized: wait quietly (one log line per streak).
+        - Frames come back all black: GSPro is almost certainly in exclusive
+          fullscreen. Log it once with the fix, and skip OCR on those frames.
+        - Any other failure is logged and retried; it never kills the engine.
+          `python -m mvp.tools.bay_check` diagnoses all of the above.
+        """
+        # Imported here so this module still imports on non-Windows machines.
+        from mvp.engine.ocr.capture_windows import capture_game_frame
+        from mvp.engine.ocr.window_capture import GameWindowNotFound, looks_black
+
+        target = f"window '{self.window_title}'" if self.window_title else f"monitor {self.monitor_index}"
+        logger.info(f"Starting OCR capture loop on {target}")
+
+        waiting_logged = False
+        black_logged = False
         while True:
             try:
-                frame = capture_full_hud_frame_from_monitor(self.monitor_index)
-                await self.ocr_listener.process_frame(frame)
+                frame = capture_game_frame(self.window_title, self.monitor_index)
+                if waiting_logged:
+                    logger.info(f"[OCR] Found {target}; capturing.")
+                    waiting_logged = False
+
+                if looks_black(frame):
+                    if not black_logged:
+                        logger.warning(
+                            "[OCR] Captured frames are black. GSPro is likely in exclusive "
+                            "fullscreen - switch it to Windowed or Borderless in its display "
+                            "settings. OCR is paused until real pixels arrive."
+                        )
+                        black_logged = True
+                else:
+                    black_logged = False
+                    await self.ocr_listener.process_frame(frame)
+            except GameWindowNotFound as exc:
+                if not waiting_logged:
+                    logger.warning(f"[OCR] Waiting for {target}: {exc}")
+                    waiting_logged = True
             except Exception:
                 logger.exception("OCR capture loop iteration failed")
             await asyncio.sleep(self.ocr_poll_interval)
@@ -235,9 +261,9 @@ class EngineRuntime:
         shot-tallied scores stand.
         """
         try:
-            from mvp.engine.ocr.capture_windows import capture_full_hud_frame_from_monitor
+            from mvp.engine.ocr.capture_windows import capture_game_frame
 
-            frame = capture_full_hud_frame_from_monitor(self.monitor_index)
+            frame = capture_game_frame(self.window_title, self.monitor_index)
         except Exception:
             logger.info("[ROUND] Couldn't capture a frame for scorecard verification; using shot tally.")
             return
