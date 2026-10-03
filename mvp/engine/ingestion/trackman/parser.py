@@ -17,7 +17,7 @@ def parse_trackman_shot(payload: dict) -> ShotEvent:
     """Converts a TrackMan live payload into SimCore22's normalized ShotEvent."""
     return ShotEvent(
         source_device="TrackMan",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(),
         ball_speed=payload.get("BallSpeed"),
         launch_angle=payload.get("LaunchAngle"),
         azimuth=payload.get("LaunchDirection"),

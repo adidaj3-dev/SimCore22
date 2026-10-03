@@ -1,10 +1,20 @@
-# mvp/engine/state_writer.py
+﻿# mvp/engine/state_writer.py
+"""
+Writes the JSON files the on-screen leaderboards and viewers read:
+state/leaderboard.json, state/round_summary.json, state/admin_snapshot.json.
+
+They are OVERWRITTEN as play happens (git-ignored; examples/state/ shows their
+shape). The permanent record of finished rounds is data/rounds.jsonl.
+"""
 
 import json
 import os
-from typing import Any, Dict, List
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-STATE_DIR = "state"
+# <project root>/state, regardless of which folder the engine was started from
+STATE_DIR = str(Path(__file__).resolve().parents[2] / "state")
 LEADERBOARD_FILE = os.path.join(STATE_DIR, "leaderboard.json")
 ROUND_SUMMARY_FILE = os.path.join(STATE_DIR, "round_summary.json")
 ADMIN_SNAPSHOT_FILE = os.path.join(STATE_DIR, "admin_snapshot.json")
@@ -12,6 +22,42 @@ ADMIN_SNAPSHOT_FILE = os.path.join(STATE_DIR, "admin_snapshot.json")
 
 def _ensure_state_dir() -> None:
     os.makedirs(STATE_DIR, exist_ok=True)
+
+
+def _write_json(path: str, data: Dict[str, Any]) -> None:
+    """
+    Write via a temp file + rename so a viewer never reads a half-written file.
+    On Windows the rename fails if a viewer has the file open at that instant,
+    so retry briefly (it's open for microseconds).
+    """
+    _ensure_state_dir()
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    for _ in range(10):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            time.sleep(0.02)
+    os.replace(tmp, path)  # last attempt: let a persistent problem surface
+
+
+def read_state(path: str, attempts: int = 5) -> Optional[Dict[str, Any]]:
+    """
+    Read one of the state files for a viewer. Returns None if it doesn't exist
+    yet, or is being replaced at this very moment (Windows briefly denies access
+    during the swap): just try again on the next poll.
+    """
+    for _ in range(attempts):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return None
+        except (PermissionError, json.JSONDecodeError):
+            time.sleep(0.02)
+    return None
 
 
 def write_leaderboard_state(
@@ -24,7 +70,7 @@ def write_leaderboard_state(
     """
     players: list of dicts like:
     {
-        "name": "Jeff",
+        "name": "Alex",
         "thru": 5,
         "gross": 20,
         "net": 14,
@@ -35,16 +81,13 @@ def write_leaderboard_state(
         "outdoor_hcp": 12.0,
     }
     """
-    _ensure_state_dir()
-    data: Dict[str, Any] = {
+    _write_json(LEADERBOARD_FILE, {
         "course_name": course_name,
         "format": format_name,
         "league_name": league_name,
         "week": week,
         "players": players,
-    }
-    with open(LEADERBOARD_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    })
 
 
 def write_round_summary_state(summary: Dict[str, Any]) -> None:
@@ -52,7 +95,7 @@ def write_round_summary_state(summary: Dict[str, Any]) -> None:
     summary: full dict from analyze_round or similar, plus player/course metadata, e.g.:
 
     {
-        "player": "Jeff",
+        "player": "Alex",
         "course": "Test Course",
         "holes": 9,
         "gross": 38,
@@ -65,9 +108,7 @@ def write_round_summary_state(summary: Dict[str, Any]) -> None:
         ...
     }
     """
-    _ensure_state_dir()
-    with open(ROUND_SUMMARY_FILE, "w") as f:
-        json.dump(summary, f, indent=2)
+    _write_json(ROUND_SUMMARY_FILE, summary)
 
 
 def write_admin_snapshot_state(
@@ -79,7 +120,7 @@ def write_admin_snapshot_state(
     """
     players: list of dicts like:
     {
-        "name": "Jeff",
+        "name": "Alex",
         "outdoor_ghin": 12.0,
         "simcore_index_start": 10.0,
         "simcore_index_current": 10.0,
@@ -96,12 +137,9 @@ def write_admin_snapshot_state(
         "points": 29,
     }
     """
-    _ensure_state_dir()
-    data: Dict[str, Any] = {
+    _write_json(ADMIN_SNAPSHOT_FILE, {
         "league_name": league_name,
         "week": week,
         "players": players,
         "teams": teams,
-    }
-    with open(ADMIN_SNAPSHOT_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    })

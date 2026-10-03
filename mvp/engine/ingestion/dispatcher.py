@@ -1,11 +1,16 @@
 # mvp/engine/ingestion/dispatcher.py
 import asyncio
+import logging
 from collections import deque
 from typing import Deque, Optional, Union, Callable, List
 
-from mvp.engine.models.events import ShotEvent, PlayerEvent, HoleEvent, ScoreEvent
+from mvp.engine.models.events import (
+    ShotEvent, PlayerEvent, HoleEvent, ScoreEvent, RoundStartEvent, RoundEndEvent,
+)
 
-Event = Union[ShotEvent, PlayerEvent, HoleEvent, ScoreEvent]
+logger = logging.getLogger(__name__)
+
+Event = Union[ShotEvent, PlayerEvent, HoleEvent, ScoreEvent, RoundStartEvent, RoundEndEvent]
 
 
 class EventDispatcher:
@@ -38,8 +43,8 @@ class EventDispatcher:
         for callback in self._listeners:
             try:
                 callback(event)
-            except Exception as e:
-                print(f"[DISPATCHER] Listener error: {e}")
+            except Exception:
+                logger.exception("Event listener failed on %s", type(event).__name__)
 
     async def next_event(self, timeout: Optional[float] = None) -> Optional[Event]:
         """Engine loop waits for next event from queue."""

@@ -1,6 +1,12 @@
 # mvp/ui/live_leaderboard.py
+"""
+Console leaderboard that redraws whenever state/leaderboard.json changes.
 
-import json
+    python -m mvp.ui.live_leaderboard                  # standings
+    python -m mvp.ui.live_leaderboard --player "Sam"   # plus that player's index / points
+"""
+
+import argparse
 import os
 import time
 
@@ -9,11 +15,12 @@ from rich.table import Table
 from rich.panel import Panel
 from rich import box
 
-STATE_FILE = "state/leaderboard.json"
+from mvp.engine.state_writer import LEADERBOARD_FILE as STATE_FILE, read_state
+
 console = Console()
 
 
-def render_leaderboard(data):
+def render_leaderboard(data, player=None):
     console.clear()
 
     header = f"{data['league_name']} • Week {data['week']}"
@@ -53,7 +60,7 @@ def render_leaderboard(data):
             str(p["points_needed"]),
         )
 
-    me = next((p for p in players if p["name"].lower() == "jeff"), None)
+    me = next((p for p in players if player and p["name"].lower() == player.lower()), None)
     footer_text = ""
     if me:
         footer_text = (
@@ -75,15 +82,19 @@ def render_leaderboard(data):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Live console leaderboard")
+    parser.add_argument("--player", help="also show this player's index and points in the footer")
+    args = parser.parse_args()
+
     last_mtime = None
     while True:
         if os.path.exists(STATE_FILE):
             mtime = os.path.getmtime(STATE_FILE)
             if mtime != last_mtime:
-                with open(STATE_FILE) as f:
-                    data = json.load(f)
-                render_leaderboard(data)
-                last_mtime = mtime
+                data = read_state(STATE_FILE)
+                if data is not None:  # None = being rewritten right now; retry next poll
+                    render_leaderboard(data, args.player)
+                    last_mtime = mtime
         time.sleep(0.5)
 
 

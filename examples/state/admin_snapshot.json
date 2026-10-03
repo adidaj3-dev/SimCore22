@@ -1,9 +1,9 @@
-{
+﻿{
   "league_name": "Winter Sim League",
   "week": 1,
   "players": [
     {
-      "name": "Jeff",
+      "name": "Alex",
       "outdoor_ghin": 12.0,
       "simcore_index_start": 10.0,
       "simcore_index_current": 10.0,

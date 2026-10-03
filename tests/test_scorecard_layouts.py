@@ -26,7 +26,7 @@ needs_render = pytest.mark.skipif(
     find_tesseract() is None or not FONTS_AVAILABLE, reason="needs Tesseract and Windows fonts"
 )
 
-FULL = dict(zip(range(1, 19), [4, 3, 4, 4, 4, 3, 5, 2, 4, 3, 4, 4, 2, 3, 4, 2, 3, 4]))
+FULL = dict(zip(range(1, 19), [4, 3, 4, 4, 4, 3, 5, 2, 4, 3, 4, 4, 2, 3, 4, 2, 3, 4], strict=True))
 NINE = {h: FULL[h] for h in range(1, 10)}
 
 

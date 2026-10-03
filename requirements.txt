@@ -1,5 +1,6 @@
 # SimCore22 runtime dependencies (Python 3.12+; developed on 3.14)
 # Install:  .venv\Scripts\python -m pip install -r requirements.txt
+# (setup_bay.bat does this for you. For development use requirements-dev.txt.)
 
 # --- Screen capture + OCR ---
 mss
@@ -11,10 +12,8 @@ pytesseract          # also needs the Tesseract program itself: winget install t
 # --- Console UI ---
 rich
 
-# --- Dev ---
-pytest
-
 # --- Add later when the code actually uses them ---
-# websockets   (live leaderboard push to screens)
-# pyserial     (direct launch-monitor serial link, if ever needed)
-# scipy        (advanced analytics)
+# fastapi, uvicorn   (web leaderboard: mvp/engine/server/api.py is not wired up yet)
+# websockets         (live leaderboard push to screens)
+# pyserial           (direct launch-monitor serial link, if ever needed)
+# scipy              (advanced analytics)

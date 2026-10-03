@@ -2,7 +2,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Any
+from typing import Callable, Any
 
 from mvp.engine.models.events import (
     PlayerEvent,
@@ -25,10 +25,10 @@ class RoundStartOCR:
     def __init__(
         self,
         layout_dir: str,
-        emit_callback: Callable[[Any], None],   # <-- FIXED: emit is NOT async
+        emit_callback: Callable[[Any], None],   # synchronous (EventDispatcher.emit)
     ):
         self.layout_dir = Path(layout_dir)
-        self.emit = emit_callback               # <-- FIXED: store sync callback
+        self.emit = emit_callback
         self.cache = CourseMetadataCache()
         self.round_active = False
 
@@ -40,9 +40,9 @@ class RoundStartOCR:
         metadata = self.cache.get_metadata(raw_data["course_name"], raw_data)
         course_name = metadata.get("course_name", "Unknown Course")
 
-        now = datetime.utcnow()
+        now = datetime.now()
 
-        # FIXED: emit() is synchronous, so DO NOT await it
+        # emit() is synchronous - don't await it
         self.emit(RoundStartEvent(timestamp=now, course_name=course_name))
         self.emit(PlayerEvent(timestamp=now, player_name=player_name))
         self.emit(HoleEvent(timestamp=now, hole_number=1))
@@ -54,9 +54,7 @@ class RoundStartOCR:
         if not self.round_active:
             return
 
-        now = datetime.utcnow()
-
-        # FIXED: emit() is synchronous
+        now = datetime.now()
         self.emit(RoundEndEvent(timestamp=now, reason=reason))
 
         self.round_active = False

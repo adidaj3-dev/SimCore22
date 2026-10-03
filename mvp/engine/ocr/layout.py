@@ -1,8 +1,18 @@
 # mvp/engine/ocr/layout.py
+"""
+Where the HUD regions sit on the GSPro picture, as FRACTIONS of the picture
+(so they keep working at any window size). Edit with:
+
+    python -m mvp.tools.ocr_calibration
+
+The scorecard needs no layout: scorecard_reader.py finds its own table.
+"""
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple
+
+LAYOUT_DIR = Path(__file__).resolve().parent / "layouts"
 
 
 @dataclass
@@ -28,40 +38,15 @@ class HUDLayout:
     hud: RelativeRect
 
 
-@dataclass
-class ScorecardLayout:
-    scorecard: RelativeRect
+def _rect(obj: dict) -> RelativeRect:
+    return RelativeRect(x1=obj["x1"], y1=obj["y1"], x2=obj["x2"], y2=obj["y2"])
 
 
 def load_hud_layout(base_dir: Path | None = None) -> HUDLayout:
-    if base_dir is None:
-        base_dir = Path(__file__).resolve().parent / "layouts"
-
-    path = base_dir / "gspro_hud.json"
-    data = json.loads(path.read_text())
-
-    def rr(obj):
-        return RelativeRect(
-            x1=obj["x1"], y1=obj["y1"], x2=obj["x2"], y2=obj["y2"]
-        )
-
+    path = (base_dir or LAYOUT_DIR) / "gspro_hud.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
     return HUDLayout(
-        player_name=rr(data["player_name"]),
-        hole_number=rr(data["hole_number"]),
-        hud=rr(data["hud"]),
+        player_name=_rect(data["player_name"]),
+        hole_number=_rect(data["hole_number"]),
+        hud=_rect(data["hud"]),
     )
-
-
-def load_scorecard_layout(base_dir: Path | None = None) -> ScorecardLayout:
-    if base_dir is None:
-        base_dir = Path(__file__).resolve().parent / "layouts"
-
-    path = base_dir / "gspro_scorecard.json"
-    data = json.loads(path.read_text())
-
-    def rr(obj):
-        return RelativeRect(
-            x1=obj["x1"], y1=obj["y1"], x2=obj["x2"], y2=obj["y2"]
-        )
-
-    return ScorecardLayout(scorecard=rr(data["scorecard"]))

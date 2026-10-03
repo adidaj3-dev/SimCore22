@@ -1,4 +1,12 @@
 # mvp/tools/diagnostic_dashboard.py
+"""
+Live status board: is data flowing, and are the state files being updated?
+
+The "Launch Monitor Stream" row only listens for UDP datagrams on the given
+port. That is an ASSUMPTION about how a launch monitor sends data (nothing has
+confirmed it), and it will conflict with anything else bound to that port - use
+`python -m mvp.tools.packet_capture` to find out what is really being sent.
+"""
 
 import os
 import time
@@ -9,6 +17,8 @@ from rich.table import Table
 from rich.live import Live
 from rich.panel import Panel
 from rich import box
+
+from mvp.engine.state_writer import ADMIN_SNAPSHOT_FILE, LEADERBOARD_FILE, ROUND_SUMMARY_FILE
 
 console = Console()
 
@@ -37,9 +47,9 @@ def file_status(path: str):
 def build_dashboard(host: str, port: int):
     lm_ok = check_lm_port(host, port)
 
-    lb_status, lb_age = file_status("state/leaderboard.json")
-    rs_status, rs_age = file_status("state/round_summary.json")
-    ad_status, ad_age = file_status("state/admin_snapshot.json")
+    lb_status, lb_age = file_status(LEADERBOARD_FILE)
+    rs_status, rs_age = file_status(ROUND_SUMMARY_FILE)
+    ad_status, ad_age = file_status(ADMIN_SNAPSHOT_FILE)
 
     t = Table(box=box.SIMPLE_HEAVY, expand=True)
     t.add_column("Component", style="bold")
@@ -69,7 +79,7 @@ def build_dashboard(host: str, port: int):
 
     panel = Panel(
         t,
-        title=f"[bold cyan]SimCore22 Diagnostic Dashboard[/bold cyan]",
+        title="[bold cyan]SimCore22 Diagnostic Dashboard[/bold cyan]",
         subtitle=f"Updated: {datetime.now().strftime('%H:%M:%S')}",
         border_style="cyan",
         expand=True,

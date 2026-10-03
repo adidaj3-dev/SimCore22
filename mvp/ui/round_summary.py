@@ -1,6 +1,5 @@
 # mvp/ui/round_summary.py
 
-import json
 import os
 import time
 
@@ -9,7 +8,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich import box
 
-STATE_FILE = "state/round_summary.json"
+from mvp.engine.state_writer import ROUND_SUMMARY_FILE as STATE_FILE, read_state
+
 console = Console()
 
 
@@ -48,7 +48,7 @@ def render_summary(d):
 
     panel = Panel(
         outer,
-        title="[bold cyan]SIMCORE22 ROUND SUMMARY[/bold cyan]",
+        title=f"[bold cyan]SIMCORE22 ROUND SUMMARY[/bold cyan]  {header}",
         subtitle=sub,
         border_style="cyan",
         expand=True,
@@ -63,10 +63,10 @@ def main():
         if os.path.exists(STATE_FILE):
             mtime = os.path.getmtime(STATE_FILE)
             if mtime != last_mtime:
-                with open(STATE_FILE) as f:
-                    d = json.load(f)
-                render_summary(d)
-                last_mtime = mtime
+                d = read_state(STATE_FILE)
+                if d is not None:  # None = being rewritten right now; retry next poll
+                    render_summary(d)
+                    last_mtime = mtime
         time.sleep(0.5)
 
 

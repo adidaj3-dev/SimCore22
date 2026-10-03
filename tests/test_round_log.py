@@ -2,7 +2,6 @@ import asyncio
 import json
 from datetime import datetime
 
-import pytest
 
 from mvp.engine import engine_loop, round_log
 from mvp.engine.engine_loop import EngineRuntime

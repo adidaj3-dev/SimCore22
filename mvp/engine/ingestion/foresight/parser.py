@@ -26,13 +26,13 @@ def parse_foresight_packet(raw_packet: bytes) -> dict | None:
 
     try:
         # ---------------------------------------------------------
-        # Placeholder decoding logic
+        # PLACEHOLDER - not a real Foresight decoder.
         # ---------------------------------------------------------
-        # Real Falcon/Hawk/Quad packets are binary structures.
-        # On Tuesday, we will capture a few packets and decode them.
-        #
-        # For now, assume the packet is UTF-8 JSON-like for testing.
-        # Replace this with real binary parsing later.
+        # No real Falcon / Hawk / GCQuad packet has been decoded yet. This
+        # only understands the "key=value" text that tests and dry runs send.
+        # To replace it: capture real packets on a bay with
+        #     python -m mvp.tools.packet_capture
+        # and write the decoder against those.
         # ---------------------------------------------------------
 
         text = raw_packet.decode(errors="ignore")
@@ -40,7 +40,6 @@ def parse_foresight_packet(raw_packet: bytes) -> dict | None:
         if "SHOT" not in text.upper():
             return None  # ignore heartbeats, pings, etc.
 
-        # Fake test payload structure for dry runs
         payload = {
             "device": detect_device(text),
             "ball_speed": extract_value(text, "ball_speed"),

@@ -1,6 +1,5 @@
 # mvp/ui/admin_view.py
 
-import json
 import os
 import time
 
@@ -9,7 +8,8 @@ from rich.table import Table
 from rich.panel import Panel
 from rich import box
 
-STATE_FILE = "state/admin_snapshot.json"
+from mvp.engine.state_writer import ADMIN_SNAPSHOT_FILE as STATE_FILE, read_state
+
 console = Console()
 
 
@@ -130,10 +130,10 @@ def main():
         if os.path.exists(STATE_FILE):
             mtime = os.path.getmtime(STATE_FILE)
             if mtime != last_mtime:
-                with open(STATE_FILE) as f:
-                    d = json.load(f)
-                render_admin(d)
-                last_mtime = mtime
+                d = read_state(STATE_FILE)
+                if d is not None:  # None = being rewritten right now; retry next poll
+                    render_admin(d)
+                    last_mtime = mtime
         time.sleep(1.0)
 
 

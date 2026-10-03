@@ -12,7 +12,7 @@ Supports:
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict
 
 from mvp.engine.handicap.formula_engine import Formula
 

@@ -1,25 +1,48 @@
-# SimCore22 MVP
+# SimCore22
 
-Indoor-golf league engine: reads rounds from GSPro / launch monitors, scores
-them, updates handicaps, and writes a live leaderboard. Windows, Python 3.12+
-(developed on 3.14).
+An all-in-one system for indoor golf venues: it reads rounds from GSPro and
+launch monitors, scores them automatically, keeps handicaps, and drives live
+leaderboards for leagues and tournaments. Windows, Python 3.12+ (developed on
+3.14).
 
-## What it does today
+> **Status: proof of concept.** Everything below is built and tested without
+> hardware. The first run on a real bay (Foresight Falcon / Hawk + GSPro) is
+> the next milestone - see [Status](#status).
+
+## Status
+
+| Area | State |
+|---|---|
+| Capture the GSPro window (any size / position / monitor) | built, tested on stand-in windows |
+| Read GSPro's scorecard, verified against its printed totals | built; works on the one real 18-hole card; 9-hole layout is an **assumption** |
+| Round lifecycle: ends on GSPro's scorecard, quit / save any time | built, tested |
+| Append-only round log with the scorecard screenshot of every round | built, tested |
+| Leaderboard / round summary / admin snapshot JSON | built, tested |
+| Live player and hole tracking from the HUD | needs calibration on a bay |
+| Live shot data (ball speed, carry, ...) | **not working yet** - needs real launch-monitor packets (`packet_capture`) |
+| Handicap updates | engine built; leagues (schedule, round numbers) not configurable yet |
+| Database, admin portal, on-screen leaderboards, POS, scheduling | not started |
+
+## How it works
 
 ```
 Foresight listener (placeholder protocol) ─┐
 GSPro screen capture + OCR  ───────────────┼─► EventDispatcher ─► engine ─► leaderboard
-   - player / hole tracking (needs calibration)                      │        handicap
-   - round-end scorecard, verified against GSPro's printed totals    │        analyzer
-                                                                     └─► state/*.json
+   - player / hole tracking                                          │        handicap
+   - end-of-round scorecard                                          │        analyzer
+                                                                     ├─► state/*.json      (live, overwritten)
+                                                                     └─► data/rounds.jsonl (permanent log)
 ```
 
-- **Working and tested:** scorecard reader, window capture, engine event
-  flow, leaderboard / round summary / admin snapshot JSON.
-- **Not working yet:** live shot stats from the screen (`parse_shot_tiles` is
-  a stub), and the real Foresight wire protocol (nobody has captured a real
-  Falcon/Hawk packet yet - use `mvp/tools/falcon_packet_decoder.py` on a bay).
-- **Not wired up:** `mvp/engine/server/api.py` (web leaderboard), TrackMan.
+Until there is official API access, reading GSPro's screen is the bridge. When a
+real data feed exists it plugs in as one more event source; nothing downstream
+changes.
+
+## Set up a bay PC (once)
+
+Double-click **`setup_bay.bat`**. It installs Python 3.14 and Tesseract
+(via winget), creates `.venv`, installs `requirements.txt`, and runs the
+diagnostic. Then **`run_bay.bat`** starts the engine.
 
 ## How a round works
 
@@ -58,16 +81,6 @@ The log is append-only, survives restarts, and is git-ignored (it holds player
 names). It is not a database - it's the evidence for deciding what the
 database should store. Read it with `mvp.engine.round_log.read_rounds()`.
 
-**Assumption to confirm on the bay:** the 9-hole scorecard layout (columns
-1-9, OUT, optional TOT) is a guess; only the 18-hole card has been checked
-against a real GSPro card.
-
-## Set up a bay PC (once)
-
-Double-click **`setup_bay.bat`**. It installs Python 3.14 and Tesseract
-(via winget), creates `.venv`, installs `requirements.txt`, and runs the
-diagnostic. Then **`run_bay.bat`** starts the engine.
-
 ## Screen capture
 
 The engine captures the GSPro **window**, cropped to its picture (no title
@@ -81,30 +94,39 @@ the display. Requirements:
 - GSPro's window title must contain `GSPro`. If it doesn't, set the
   `SIMCORE_WINDOW_TITLE` environment variable. `bay_check` lists real titles.
 
-### Diagnose / calibrate
+## Tools
 
-```bash
-python -m mvp.tools.bay_check            # what's running, what the capture sees, verdict
-python -m mvp.tools.capture_screenshot   # save one frame of the GSPro picture
-python -m mvp.tools.ocr_calibration      # draw the HUD boxes on that frame
-```
+Run from the project folder, e.g. `.venv\Scripts\python -m mvp.tools.bay_check`.
 
-`bay_check` writes `captures/<timestamp>/` (screenshots, `game_window.png`,
-`report.json`) - send that folder back when something looks wrong.
+| Tool | What it's for |
+|---|---|
+| `mvp.tools.bay_check` | What's running, what the capture sees, a verdict. Saves `captures/<time>/` (screenshots, `report.json`) - send that folder back when something looks wrong |
+| `mvp.tools.packet_capture` | Record what a launch monitor / simulator really sends (hex dump file) so it can be decoded |
+| `mvp.tools.capture_screenshot` | Save one frame of the GSPro picture |
+| `mvp.tools.ocr_calibration` | Draw the HUD regions on that frame and save them as the OCR layout |
+| `mvp.tools.fake_round_feed` | Demo data with no hardware, for developing a leaderboard screen |
+| `mvp.tools.diagnostic_dashboard` | Live "is data flowing / are the files updating" board |
+| `mvp.ui.live_leaderboard`, `round_summary`, `admin_view` | Console viewers for `state/*.json` (see `examples/state/` for the file shapes) |
 
 ## Project layout
 
 - `mvp/engine/engine_loop.py` - entry point; wires ingestion → engine → outputs
-- `mvp/engine/ocr/` - window capture, Tesseract setup, scorecard + HUD reading,
-  layouts (`layouts/*.json`, fractions of the game picture)
-- `mvp/engine/ingestion/` - event bus and Foresight / TrackMan parsers
-- `mvp/engine/{leaderboard,analyzer,handicap,scheduling,models}/` - scoring
-- `mvp/tools/` - bay diagnostics and calibration
-- `state/` - JSON output the leaderboard screens read
-- `tests/` - `python -m pytest tests`
+- `mvp/engine/engine.py` - live session state (players, holes, handicaps)
+- `mvp/engine/ocr/` - window capture, scorecard reader, HUD reading
+  (`layouts/*.json` are fractions of the game picture)
+- `mvp/engine/ingestion/` - event bus; Foresight and TrackMan parsers (placeholders)
+- `mvp/engine/{leaderboard,analyzer,handicap,scheduling,models,admin}/` - scoring
+- `mvp/engine/round_log.py`, `state_writer.py` - the permanent log, the live JSON
+- `mvp/tools/`, `mvp/ui/` - diagnostics and console viewers
+- `examples/` - sample output files
+- `tests/` - `python -m pytest`
 
 ## Developing
 
 ```bash
-.venv\Scripts\python -m pytest tests
+.venv\Scripts\python -m pip install -r requirements-dev.txt
+.venv\Scripts\python -m pytest
+.venv\Scripts\ruff check mvp tests
 ```
+
+Generated folders (`state/`, `data/`, `logs/`, `captures/`) are git-ignored.

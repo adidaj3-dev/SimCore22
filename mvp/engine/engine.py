@@ -1,23 +1,27 @@
 # mvp/engine/engine.py
-
 """
-Core engine API for SimCore22 MVP.
+Live session state and the handlers that update it.
 
-This module defines the public event handlers that the engine loop calls.
-Behind these, we’ll later plug in proper SessionState / RoundState / HoleState
-and handicap integration. For now, they are minimal but structured.
+engine_loop routes each event (player, hole, shot, score) to a handler here;
+the handlers keep one in-memory SessionState -> RoundState (per player) ->
+HoleState (per hole). Nothing is persisted: finished rounds are written out by
+engine_loop (state/*.json and data/rounds.jsonl), and handicaps survive between
+rounds only in `_handicap_book` until a database exists.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 from mvp.engine.models.events import ShotEvent, PlayerEvent, HoleEvent, ScoreEvent
 
+logger = logging.getLogger(__name__)
+
 
 # -------------------------------------------------------------------
-# Simple in-memory state models (MVP)
+# In-memory state models
 # -------------------------------------------------------------------
 
 @dataclass
@@ -123,29 +127,23 @@ def handle_player_event(event: PlayerEvent) -> None:
     """
     Update current player in session state.
     """
-    global _session_state
-
     name = event.player_name.strip()
     if not name:
         return
 
-    get_or_create_round_state(name)
-
+    round_state = get_or_create_round_state(name)
     _session_state.current_player = name
 
-    round_state = _session_state.players[name]
     if round_state.current_hole is None and _session_state.current_hole is not None:
         round_state.current_hole = _session_state.current_hole
 
-    print(f"[ENGINE] PlayerEvent → current_player={_session_state.current_player}")
+    logger.info("Player: %s", name)
 
 
 def handle_hole_event(event: HoleEvent) -> None:
     """
     Update current hole in session state.
     """
-    global _session_state
-
     hole = event.hole_number
     if hole <= 0:
         return
@@ -153,31 +151,30 @@ def handle_hole_event(event: HoleEvent) -> None:
     _session_state.current_hole = hole
 
     if _session_state.current_player:
-        round_state = _session_state.players[_session_state.current_player]
+        round_state = get_or_create_round_state(_session_state.current_player)
         round_state.current_hole = hole
         if hole not in round_state.holes:
             round_state.holes[hole] = HoleState(hole_number=hole)
 
-    print(f"[ENGINE] HoleEvent → current_hole={_session_state.current_hole}")
+    logger.info("Hole: %d", hole)
 
 
 def handle_shot_event(event: ShotEvent) -> None:
     """
     Update engine state with a new shot.
     """
-    global _session_state
-
     player = _session_state.current_player
     hole = _session_state.current_hole
 
-    # Bind OCR metadata into the shot event
+    # Stamp the shot with who hit it and where (the round log and the
+    # per-player stats are built from these).
     if player:
         event.metadata["player_name"] = player
     if hole:
         event.metadata["hole_number"] = hole
 
     if not player or not hole:
-        print(f"[ENGINE] ShotEvent (no player/hole bound yet): {event}")
+        logger.warning("Shot arrived before a player/hole was known; not counted: %s", event)
         return
 
     round_state = get_or_create_round_state(player)
@@ -186,9 +183,9 @@ def handle_shot_event(event: ShotEvent) -> None:
     hole_state = round_state.holes.setdefault(hole, HoleState(hole_number=hole))
     hole_state.strokes += 1
 
-    print(
-        f"[ENGINE] ShotEvent → player={player}, hole={hole}, "
-        f"strokes_on_hole={hole_state.strokes}, ball_speed={event.ball_speed}"
+    logger.info(
+        "Shot: player=%s hole=%d stroke=%d ball_speed=%s",
+        player, hole, hole_state.strokes, event.ball_speed,
     )
 
 
@@ -196,8 +193,6 @@ def handle_score_event(event: ScoreEvent) -> None:
     """
     Update scorecard / scoring state for a player/hole.
     """
-    global _session_state
-
     player = event.player_name.strip()
     hole = event.hole_number
 
@@ -211,10 +206,7 @@ def handle_score_event(event: ScoreEvent) -> None:
     if event.par is not None:
         hole_state.par = event.par
 
-    print(
-        f"[ENGINE] ScoreEvent → player={player}, hole={hole}, "
-        f"gross={hole_state.gross_score}, par={hole_state.par}"
-    )
+    logger.info("Score: player=%s hole=%d gross=%s par=%s", player, hole, hole_state.gross_score, hole_state.par)
 
 
 def get_session_state() -> SessionState:

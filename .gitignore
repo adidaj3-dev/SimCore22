@@ -1,21 +1,32 @@
-# Python cache
+# Python
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
 
-# Virtual environment
+# Virtual environments (.venv is current; venv/ was the old Mac one)
+.venv/
 venv/
 
-# macOS junk
+# OS junk
 .DS_Store
+Thumbs.db
 
-# Windows / new venv
-.venv/
+# ---- Generated at run time - never committed ----
 
-# Runtime output
+# Live JSON the leaderboard screens read (examples/state/ shows the shape)
+/state/
+
+# Application log
+/logs/
 *.log
-captures/
+
+# bay_check screenshots (full-desktop images)
+/captures/
+
+# Round log + scorecard screenshots: real player names and scores
+/data/
+
+# Scratch images from the OCR demo / calibration tools
 hud_preview.png
 gspro_capture.png
-
-# Real player names/scores logged by the engine - never commit
-/data/

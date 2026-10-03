@@ -81,7 +81,7 @@ def test_missing_window_raises_not_found():
     "position, canvas_w, canvas_h",
     [("+140+90", 640, 400), ("+700+260", 800, 500)],  # different spot AND size: same result
 )
-def test_capture_returns_only_the_picture_not_title_bar_or_borders(position, canvas_w, canvas_h):
+def test_capture_returns_only_the_picture_not_title_bar_or_borders(live_desktop, position, canvas_w, canvas_h):
     """
     Open a real window (title bar + borders) painted red on the left and blue
     on the right. The capture must be pure red/blue right to its edges - if

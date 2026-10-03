@@ -1,14 +1,15 @@
 import logging
 from logging.handlers import RotatingFileHandler
-import os
+from pathlib import Path
 
-LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
-
-LOG_FILE = os.path.join(LOG_DIR, "simcore_mvp.log")
+# <project root>/logs - kept out of the source tree and git-ignored (*.log)
+LOG_DIR = Path(__file__).resolve().parents[2] / "logs"
+LOG_FILE = LOG_DIR / "simcore22.log"
 
 
 def setup_logging(level=logging.INFO):
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
     logger = logging.getLogger()
     logger.setLevel(level)
 
@@ -25,8 +26,9 @@ def setup_logging(level=logging.INFO):
     ch.setFormatter(fmt)
     logger.addHandler(ch)
 
-    # Rotating file handler
-    fh = RotatingFileHandler(LOG_FILE, maxBytes=1_000_000, backupCount=3)
+    # Rotating file handler. UTF-8 explicitly: the Windows default (cp1252)
+    # can't encode every player name and would drop the log line.
+    fh = RotatingFileHandler(LOG_FILE, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 

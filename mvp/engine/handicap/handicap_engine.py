@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, Optional
 
 from mvp.engine.handicap.rounding import round_two_decimals, simcore_round_index
 from mvp.engine.handicap.validators import validate_round_data

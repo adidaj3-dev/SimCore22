@@ -59,7 +59,7 @@ def _run_loop(title, seconds=0.8):
     return runtime.ocr_listener.frames
 
 
-def test_loop_feeds_ocr_the_window_picture():
+def test_loop_feeds_ocr_the_window_picture(live_desktop):
     title = "SimCoreLoopTest-OK"
     with stand_in_window(title, "#2a6f2a", 480, 300):
         frames = _run_loop(title)
@@ -75,7 +75,7 @@ def test_loop_waits_quietly_when_the_game_isnt_open(caplog):
     assert len(waiting) == 1  # one line, not one per poll
 
 
-def test_loop_warns_once_and_skips_ocr_on_black_frames(caplog):
+def test_loop_warns_once_and_skips_ocr_on_black_frames(live_desktop, caplog):
     title = "SimCoreLoopTest-BLACK"
     with stand_in_window(title, "#000000"):
         with caplog.at_level(logging.INFO, logger="mvp.engine.engine_loop"):

@@ -1,0 +1,4 @@
+# Keep line endings consistent whoever checks the repo out (Windows bay PC, Linux Codespace)
+* text=auto
+*.bat text eol=crlf
+*.png binary

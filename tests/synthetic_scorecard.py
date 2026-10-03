@@ -10,7 +10,7 @@ cards. The only real GSPro card we have is mvp/engine/ocr/samples/scorecard.png.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont

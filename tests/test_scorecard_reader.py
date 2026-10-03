@@ -40,7 +40,7 @@ def test_non_scorecard_image_is_rejected():
 
 
 def test_verify_catches_a_misread_hole():
-    strokes = dict(zip(range(1, 19), [4, 3, 4, 4, 4, 3, 5, 2, 4, 3, 4, 4, 2, 3, 4, 2, 3, 4]))
+    strokes = dict(zip(range(1, 19), [4, 3, 4, 4, 4, 3, 5, 2, 4, 3, 4, 4, 2, 3, 4, 2, 3, 4], strict=True))
     good = PlayerCard("A", strokes, out_total=33, in_total=29, total=62)
     assert _verify(good)
 
@@ -50,5 +50,5 @@ def test_verify_catches_a_misread_hole():
 
 
 def test_verify_needs_a_printed_total_to_prove_anything():
-    strokes = dict(zip(range(1, 19), [4] * 18))
+    strokes = dict(zip(range(1, 19), [4] * 18, strict=True))
     assert not _verify(PlayerCard("A", strokes))

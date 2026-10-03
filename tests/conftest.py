@@ -1,9 +1,28 @@
+import sys
 from datetime import datetime
 
 import pytest
 
 from mvp.engine import engine, round_log, state_writer
 from mvp.engine.models.events import HoleEvent, PlayerEvent, ScoreEvent, ShotEvent
+
+
+@pytest.fixture(scope="session")
+def live_desktop():
+    """
+    Tests that open real windows and screenshot them need a visible desktop.
+    A locked or sleeping screen captures as solid black (the same symptom as a
+    game in exclusive fullscreen), so skip those tests instead of failing them.
+    """
+    if sys.platform != "win32":
+        pytest.skip("window capture is Windows-only")
+    import mss
+    import numpy as np
+
+    with mss.MSS() as screen:
+        shot = np.array(screen.grab(screen.monitors[1]))[:, :, :3]
+    if float(shot.max(axis=2).mean()) < 2:
+        pytest.skip("the screen is locked or asleep - unlock it and rerun to test window capture")
 
 
 @pytest.fixture

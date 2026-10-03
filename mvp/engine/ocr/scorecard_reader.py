@@ -330,7 +330,7 @@ def read_scorecard(frame: np.ndarray, read_distance: bool = False) -> ScorecardD
             crops.append(gray[y1:y2, x1:x2])
         # tesseract runs as a subprocess, so threads give a real speed-up
         values = list(_POOL.map(lambda crop: _read_number(crop, lo, hi), crops))
-        return dict(zip(keys, values))
+        return dict(zip(keys, values, strict=True))
 
     # Row pitch = distance between consecutive labelled rows
     ys = sorted(l.y for l in labels.values() if l is not None)

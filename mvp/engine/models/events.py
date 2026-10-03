@@ -1,8 +1,7 @@
 # mvp/engine/models/events.py
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Dict, Any, Awaitable, Callable, List
-import asyncio
+from typing import Optional, Dict, Any
 
 
 # ---------------------------------------------------------

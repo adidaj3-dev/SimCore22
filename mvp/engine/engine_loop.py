@@ -213,25 +213,31 @@ class EngineRuntime:
 
             self.last_event_time = datetime.now()
 
-            # Route event
-            if isinstance(event, ShotEvent):
-                await self._handle_shot_event(event)
+            # One bad event must never take down a bay that runs all day.
+            try:
+                await self._route_event(event)
+            except Exception:
+                logger.exception("Failed to handle %s; continuing.", type(event).__name__)
 
-            elif isinstance(event, PlayerEvent):
-                engine.handle_player_event(event)
+    async def _route_event(self, event) -> None:
+        if isinstance(event, ShotEvent):
+            await self._handle_shot_event(event)
 
-            elif isinstance(event, HoleEvent):
-                engine.handle_hole_event(event)
+        elif isinstance(event, PlayerEvent):
+            engine.handle_player_event(event)
 
-            elif isinstance(event, ScoreEvent):
-                engine.handle_score_event(event)
-                self._refresh_leaderboard()  # push the confirmed score, not just the last shot tally
+        elif isinstance(event, HoleEvent):
+            engine.handle_hole_event(event)
 
-            elif isinstance(event, RoundEndEvent):
-                # "completed" = the source says the round finished; anything
-                # else (e.g. "manual_end") is a stop before the end.
-                reason = "round_end_event" if event.reason == "completed" else event.reason
-                await self._finalize_round(reason=reason)
+        elif isinstance(event, ScoreEvent):
+            engine.handle_score_event(event)
+            self._refresh_leaderboard()  # push the confirmed score, not just the last shot tally
+
+        elif isinstance(event, RoundEndEvent):
+            # "completed" = the source says the round finished; anything
+            # else (e.g. "manual_end") is a stop before the end.
+            reason = "round_end_event" if event.reason == "completed" else event.reason
+            await self._finalize_round(reason=reason)
 
     async def _handle_shot_event(self, shot: ShotEvent) -> None:
         try:

@@ -9,9 +9,9 @@ from mvp.engine.leaderboard.leaderboard import PlayerLeaderboardRow
 
 def display_live_dashboard(rows: Iterable[PlayerLeaderboardRow]) -> None:
     """
-    Very simple console-based live leaderboard for MVP.
+    Plain console leaderboard, reprinted whenever standings change.
 
-    Later this can become a web UI, but for tomorrow a clean table is enough.
+    The on-screen bay leaderboards will read state/leaderboard.json instead.
     """
 
     rows = list(rows)

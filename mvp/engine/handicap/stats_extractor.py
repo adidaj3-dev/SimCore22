@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-from mvp.engine.engine import RoundState, HoleState
+from mvp.engine.engine import RoundState
 
 
 def extract_stats_from_round(round_state: RoundState) -> Dict:

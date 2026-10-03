@@ -1,0 +1,4 @@
+-r requirements.txt
+
+pytest   # python -m pytest
+ruff     # ruff check mvp tests

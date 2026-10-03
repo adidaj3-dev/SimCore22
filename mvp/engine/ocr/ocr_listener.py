@@ -1,5 +1,4 @@
 # mvp/engine/ocr/ocr_listener.py
-import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +11,7 @@ from mvp.engine.models.events import (
     PlayerEvent,
     HoleEvent,
 )
-from .capture import (
+from .hud_crops import (
     capture_hud_frame_from_image,
     capture_player_name_frame_from_image,
     capture_hole_number_frame_from_image,
@@ -34,7 +33,7 @@ class OCRHudListener:
 
     def __init__(
         self,
-        emit_callback: Callable[[Any], None],   # <-- FIXED: emit is sync
+        emit_callback: Callable[[Any], None],   # synchronous (EventDispatcher.emit)
         base_dir: Path | None = None,
         poll_interval: float = 1.0,
     ):
@@ -50,38 +49,40 @@ class OCRHudListener:
         """
         Call this from your capture loop with the latest HUD frame.
         """
+        # Crops are passed RAW: the parse_* functions preprocess exactly once.
+        # (Preprocessing here too thresholded the image twice and garbled text.)
         try:
             # Player
             player_img = capture_player_name_frame_from_image(
-                frame, base_dir=self.base_dir, preprocess=True
+                frame, base_dir=self.base_dir, preprocess=False
             )
             player_name = parse_player_name(player_img)
             if player_name and player_name != self._last_player:
                 self._last_player = player_name
                 self.emit(
                     PlayerEvent(
-                        timestamp=datetime.utcnow(),
+                        timestamp=datetime.now(),
                         player_name=player_name,
                     )
                 )
 
             # Hole
             hole_img = capture_hole_number_frame_from_image(
-                frame, base_dir=self.base_dir, preprocess=True
+                frame, base_dir=self.base_dir, preprocess=False
             )
             hole_number = parse_hole_number(hole_img)
             if hole_number and hole_number != self._last_hole:
                 self._last_hole = hole_number
                 self.emit(
                     HoleEvent(
-                        timestamp=datetime.utcnow(),
+                        timestamp=datetime.now(),
                         hole_number=hole_number,
                     )
                 )
 
             # Shot tiles
             hud_img = capture_hud_frame_from_image(
-                frame, base_dir=self.base_dir, preprocess=True
+                frame, base_dir=self.base_dir, preprocess=False
             )
             shot_data: Dict[str, Any] = parse_shot_tiles(hud_img)
 
@@ -92,7 +93,7 @@ class OCRHudListener:
             logger.exception("OCRHudListener.process_frame failed")
 
     def _emit_shot_event(self, data: Dict[str, Any]):
-        ts = datetime.utcnow()
+        ts = datetime.now()
         event = ShotEvent(
             source_device="OCR",
             timestamp=ts,

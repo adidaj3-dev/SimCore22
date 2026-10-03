@@ -1,4 +1,14 @@
-# mvp/tools/fake_round_feed.py
+﻿# mvp/tools/fake_round_feed.py
+"""
+Demo data with no hardware: plays a made-up 9-hole round and writes the state
+files (state/*.json) the viewers in mvp/ui read. Handy for developing a
+leaderboard screen without a bay:
+
+    python -m mvp.tools.fake_round_feed          # in one window
+    python -m mvp.ui.live_leaderboard            # in another
+
+It overwrites state/*.json, and does NOT touch the real round log.
+"""
 
 import time
 from datetime import datetime
@@ -40,7 +50,7 @@ def build_fake_scorecard() -> List[Dict[str, Any]]:
 # Main fake round driver
 # ---------------------------------------------------------
 def run_fake_round() -> None:
-    player_name = "Jeff"
+    player_name = "Alex"
     course_name = "Test Course"
     league_name = "Winter Sim League"
     week = 1
@@ -62,8 +72,7 @@ def run_fake_round() -> None:
             carry_val = 200 + hole * 2 + shot_num
             spin_val = 2500 + hole * 10
 
-            # Create ShotEvent using your real model fields
-            shot = ShotEvent(
+            shots.append(ShotEvent(
                 source_device="FAKE",
                 timestamp=ts,
                 ball_speed=140 + hole + shot_num,
@@ -74,21 +83,7 @@ def run_fake_round() -> None:
                 club_speed=95 + shot_num,
                 carry_distance=carry_val,
                 total_distance=210 + hole * 2 + shot_num,
-                metadata={
-                    "carry": carry_val,
-                    "spin": spin_val,
-                    "quality": 1.0,
-                },
-            )
-
-            # -------------------------------------------------
-            # Normalize fields so your analyzer works perfectly
-            # -------------------------------------------------
-            shot.carry = carry_val
-            shot.spin = spin_val
-            shot.quality = 1.0
-
-            shots.append(shot)
+            ))
             time.sleep(0.1)
 
         # -----------------------------------------------------
