@@ -3,8 +3,8 @@ from datetime import datetime
 
 import pytest
 
-from mvp.engine import engine, round_log, state_writer
-from mvp.engine.models.events import HoleEvent, PlayerEvent, ScoreEvent, ShotEvent
+from simcore22.engine import engine, round_log, state_writer
+from simcore22.engine.models.events import HoleEvent, PlayerEvent, ScoreEvent, ShotEvent
 
 
 @pytest.fixture(scope="session")

@@ -13,7 +13,7 @@ pytesseract          # also needs the Tesseract program itself: winget install t
 rich
 
 # --- Add later when the code actually uses them ---
-# fastapi, uvicorn   (web leaderboard: mvp/engine/server/api.py is not wired up yet)
+# fastapi, uvicorn   (web leaderboard: simcore22/engine/server/api.py is not wired up yet)
 # websockets         (live leaderboard push to screens)
 # pyserial           (direct launch-monitor serial link, if ever needed)
 # scipy              (advanced analytics)

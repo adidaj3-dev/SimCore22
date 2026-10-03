@@ -6,8 +6,8 @@ from contextlib import contextmanager
 
 import pytest
 
-from mvp.engine.engine_loop import EngineRuntime
-from mvp.engine.ocr.window_capture import make_dpi_aware
+from simcore22.engine.engine_loop import EngineRuntime
+from simcore22.engine.ocr.window_capture import make_dpi_aware
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows capture")
 
@@ -68,7 +68,7 @@ def test_loop_feeds_ocr_the_window_picture(live_desktop):
 
 
 def test_loop_waits_quietly_when_the_game_isnt_open(caplog):
-    with caplog.at_level(logging.INFO, logger="mvp.engine.engine_loop"):
+    with caplog.at_level(logging.INFO, logger="simcore22.engine.engine_loop"):
         frames = _run_loop("zzz-no-such-window-55555")
     assert frames == []
     waiting = [r for r in caplog.records if "Waiting for" in r.getMessage()]
@@ -78,7 +78,7 @@ def test_loop_waits_quietly_when_the_game_isnt_open(caplog):
 def test_loop_warns_once_and_skips_ocr_on_black_frames(live_desktop, caplog):
     title = "SimCoreLoopTest-BLACK"
     with stand_in_window(title, "#000000"):
-        with caplog.at_level(logging.INFO, logger="mvp.engine.engine_loop"):
+        with caplog.at_level(logging.INFO, logger="simcore22.engine.engine_loop"):
             frames = _run_loop(title)
     assert frames == []  # never ran OCR on a black frame
     black = [r for r in caplog.records if "exclusive fullscreen" in r.getMessage()]

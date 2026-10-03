@@ -67,7 +67,7 @@ if errorlevel 1 (
 echo.
 echo [4/4] Running the bay diagnostic ...
 echo       Bring GSPro / FSX to the front now if it's open.
-".venv\Scripts\python.exe" -m mvp.tools.bay_check
+".venv\Scripts\python.exe" -m simcore22.tools.bay_check
 
 echo.
 echo === Setup finished ===

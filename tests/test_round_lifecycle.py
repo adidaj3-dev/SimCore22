@@ -17,10 +17,10 @@ import cv2
 import numpy as np
 import pytest
 
-from mvp.engine import engine, engine_loop
-from mvp.engine.engine_loop import EngineRuntime
-from mvp.engine.ocr.tesseract_setup import find_tesseract
-from mvp.engine.models.events import (
+from simcore22.engine import engine, engine_loop
+from simcore22.engine.engine_loop import EngineRuntime
+from simcore22.engine.ocr.tesseract_setup import find_tesseract
+from simcore22.engine.models.events import (
     HoleEvent, PlayerEvent, RoundEndEvent, ScoreEvent, ShotEvent,
 )
 
@@ -152,7 +152,7 @@ def test_the_end_of_round_scorecard_finishes_the_round_once(sandbox, logged_roun
 def test_the_real_gspro_scorecard_photo_ends_and_logs_a_round_end_to_end(sandbox, logged_rounds):
     """Nothing mocked: real image -> panel check -> OCR -> finish round -> log + saved image."""
     runtime = _runtime()
-    frame = cv2.imread("mvp/engine/ocr/samples/scorecard.png")
+    frame = cv2.imread("simcore22/engine/ocr/samples/scorecard.png")
 
     async def go():
         await runtime._check_for_scorecard(frame)

@@ -3,9 +3,9 @@ import json
 from datetime import datetime
 
 
-from mvp.engine import engine_loop, round_log
-from mvp.engine.engine_loop import EngineRuntime
-from mvp.engine.models.events import ShotEvent
+from simcore22.engine import engine_loop, round_log
+from simcore22.engine.engine_loop import EngineRuntime
+from simcore22.engine.models.events import ShotEvent
 
 
 def _runtime(**kwargs):

@@ -3,15 +3,15 @@ from pathlib import Path
 import cv2
 import pytest
 
-from mvp.engine.ocr.scorecard_reader import (
+from simcore22.engine.ocr.scorecard_reader import (
     PlayerCard,
     ScorecardReadError,
     _verify,
     read_scorecard,
 )
-from mvp.engine.ocr.tesseract_setup import find_tesseract
+from simcore22.engine.ocr.tesseract_setup import find_tesseract
 
-SAMPLE = Path("mvp/engine/ocr/samples/scorecard.png")
+SAMPLE = Path("simcore22/engine/ocr/samples/scorecard.png")
 
 needs_tesseract = pytest.mark.skipif(find_tesseract() is None, reason="Tesseract not installed")
 
@@ -34,7 +34,7 @@ def test_reads_sample_scorecard():
 
 @needs_tesseract
 def test_non_scorecard_image_is_rejected():
-    hud = cv2.imread("mvp/engine/ocr/samples/hud.png")
+    hud = cv2.imread("simcore22/engine/ocr/samples/hud.png")
     with pytest.raises(ScorecardReadError):
         read_scorecard(hud)
 

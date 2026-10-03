@@ -79,7 +79,7 @@ round can be checked against what GSPro showed. A `snapshot` line shares its
 `round_id` with the round's final line - use the latest line per `round_id`.
 The log is append-only, survives restarts, and is git-ignored (it holds player
 names). It is not a database - it's the evidence for deciding what the
-database should store. Read it with `mvp.engine.round_log.read_rounds()`.
+database should store. Read it with `simcore22.engine.round_log.read_rounds()`.
 
 ## Screen capture
 
@@ -96,28 +96,28 @@ the display. Requirements:
 
 ## Tools
 
-Run from the project folder, e.g. `.venv\Scripts\python -m mvp.tools.bay_check`.
+Run from the project folder, e.g. `.venv\Scripts\python -m simcore22.tools.bay_check`.
 
 | Tool | What it's for |
 |---|---|
-| `mvp.tools.bay_check` | What's running, what the capture sees, a verdict. Saves `captures/<time>/` (screenshots, `report.json`) - send that folder back when something looks wrong |
-| `mvp.tools.packet_capture` | Record what a launch monitor / simulator really sends (hex dump file) so it can be decoded |
-| `mvp.tools.capture_screenshot` | Save one frame of the GSPro picture |
-| `mvp.tools.ocr_calibration` | Draw the HUD regions on that frame and save them as the OCR layout |
-| `mvp.tools.fake_round_feed` | Demo data with no hardware, for developing a leaderboard screen |
-| `mvp.tools.diagnostic_dashboard` | Live "is data flowing / are the files updating" board |
-| `mvp.ui.live_leaderboard`, `round_summary`, `admin_view` | Console viewers for `state/*.json` (see `examples/state/` for the file shapes) |
+| `simcore22.tools.bay_check` | What's running, what the capture sees, a verdict. Saves `captures/<time>/` (screenshots, `report.json`) - send that folder back when something looks wrong |
+| `simcore22.tools.packet_capture` | Record what a launch monitor / simulator really sends (hex dump file) so it can be decoded |
+| `simcore22.tools.capture_screenshot` | Save one frame of the GSPro picture |
+| `simcore22.tools.ocr_calibration` | Draw the HUD regions on that frame and save them as the OCR layout |
+| `simcore22.tools.fake_round_feed` | Demo data with no hardware, for developing a leaderboard screen |
+| `simcore22.tools.diagnostic_dashboard` | Live "is data flowing / are the files updating" board |
+| `simcore22.ui.live_leaderboard`, `round_summary`, `admin_view` | Console viewers for `state/*.json` (see `examples/state/` for the file shapes) |
 
 ## Project layout
 
-- `mvp/engine/engine_loop.py` - entry point; wires ingestion → engine → outputs
-- `mvp/engine/engine.py` - live session state (players, holes, handicaps)
-- `mvp/engine/ocr/` - window capture, scorecard reader, HUD reading
+- `simcore22/engine/engine_loop.py` - entry point; wires ingestion → engine → outputs
+- `simcore22/engine/engine.py` - live session state (players, holes, handicaps)
+- `simcore22/engine/ocr/` - window capture, scorecard reader, HUD reading
   (`layouts/*.json` are fractions of the game picture)
-- `mvp/engine/ingestion/` - event bus; Foresight and TrackMan parsers (placeholders)
-- `mvp/engine/{leaderboard,analyzer,handicap,scheduling,models,admin}/` - scoring
-- `mvp/engine/round_log.py`, `state_writer.py` - the permanent log, the live JSON
-- `mvp/tools/`, `mvp/ui/` - diagnostics and console viewers
+- `simcore22/engine/ingestion/` - event bus; Foresight and TrackMan parsers (placeholders)
+- `simcore22/engine/{leaderboard,analyzer,handicap,scheduling,models,admin}/` - scoring
+- `simcore22/engine/round_log.py`, `state_writer.py` - the permanent log, the live JSON
+- `simcore22/tools/`, `simcore22/ui/` - diagnostics and console viewers
 - `examples/` - sample output files
 - `tests/` - `python -m pytest`
 
@@ -126,7 +126,7 @@ Run from the project folder, e.g. `.venv\Scripts\python -m mvp.tools.bay_check`.
 ```bash
 .venv\Scripts\python -m pip install -r requirements-dev.txt
 .venv\Scripts\python -m pytest
-.venv\Scripts\ruff check mvp tests
+.venv\Scripts\ruff check simcore22 tests
 ```
 
 Generated folders (`state/`, `data/`, `logs/`, `captures/`) are git-ignored.

@@ -5,7 +5,7 @@ ROUND SETTINGS footer.
 
 These are CLEANER than a real screen (no glare, no camera tilt), so they prove
 the logic (layouts, partial rounds, checksums) - not OCR accuracy on real
-cards. The only real GSPro card we have is mvp/engine/ocr/samples/scorecard.png.
+cards. The only real GSPro card we have is simcore22/engine/ocr/samples/scorecard.png.
 """
 from __future__ import annotations
 

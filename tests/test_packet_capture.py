@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from mvp.tools.packet_capture import capture, hexdump
+from simcore22.tools.packet_capture import capture, hexdump
 
 PAYLOAD = b"SHOT ball_speed=150.5\x00\xff"
 

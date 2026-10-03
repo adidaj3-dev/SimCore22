@@ -4,7 +4,7 @@ import time
 import numpy as np
 import pytest
 
-from mvp.engine.ocr.window_capture import (
+from simcore22.engine.ocr.window_capture import (
     GameWindowNotFound,
     WindowInfo,
     capture_window_frame,

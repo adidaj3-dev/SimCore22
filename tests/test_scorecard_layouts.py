@@ -14,13 +14,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 from synthetic_scorecard import FONTS_AVAILABLE, render_scorecard  # noqa: E402
 
-from mvp.engine.ocr.scorecard_reader import (  # noqa: E402
+from simcore22.engine.ocr.scorecard_reader import (  # noqa: E402
     PlayerCard,
     _verify,
     looks_like_scorecard_panel,
     read_scorecard,
 )
-from mvp.engine.ocr.tesseract_setup import find_tesseract  # noqa: E402
+from simcore22.engine.ocr.tesseract_setup import find_tesseract  # noqa: E402
 
 needs_render = pytest.mark.skipif(
     find_tesseract() is None or not FONTS_AVAILABLE, reason="needs Tesseract and Windows fonts"

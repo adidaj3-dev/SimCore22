@@ -1,4 +1,4 @@
 -r requirements.txt
 
 pytest   # python -m pytest
-ruff     # ruff check mvp tests
+ruff     # ruff check simcore22 tests

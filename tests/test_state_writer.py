@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from mvp.engine import state_writer
+from simcore22.engine import state_writer
 
 
 @pytest.fixture
