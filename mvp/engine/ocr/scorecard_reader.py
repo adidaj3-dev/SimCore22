@@ -11,7 +11,17 @@ Instead of fixed pixel boxes, it finds the table from the text itself:
   3. OCR each cell individually (upscaled, digits only). Circled scores
      (white on red) are handled by auto-inverting light-on-dark cells.
   4. Use the OUT / IN / TOT columns as checksums. A player whose hole scores
-     don't add up to the totals is flagged `verified=False`.
+     don't add up to the printed totals is flagged `verified=False`.
+
+Round length: GSPro shows its scorecard when the chosen number of holes is
+done (9, 18, or any count). The header tells the layouts apart: if it has any
+back-nine columns (10-18 / IN) it's read as an 18-column card, otherwise as a
+9-column card. A card is also flagged `round_complete` when it has the
+"PLAY AGAIN!" button, which only the end-of-round card shows.
+
+UNVERIFIED ASSUMPTION: the 9-column layout (1-9, OUT, optional TOT) is a guess.
+Only the 18-hole layout has been checked against a real GSPro card. Send a
+real 9-hole scorecard screenshot to confirm.
 """
 from __future__ import annotations
 
@@ -29,10 +39,14 @@ from . import tesseract_setup  # noqa: F401  (configures pytesseract)
 
 logger = logging.getLogger(__name__)
 
-# Standard 18-hole GSPro layout: 9 holes, OUT, 9 holes, IN, TOT
-_COLUMN_KEYS: List[str] = (
+# 18-hole GSPro layout: 9 holes, OUT, 9 holes, IN, TOT (the last is unlabelled
+# on the real card, so it is always read by position)
+_COLUMN_KEYS_18: List[str] = (
     [str(n) for n in range(1, 10)] + ["OUT"] + [str(n) for n in range(10, 19)] + ["IN", "TOT"]
 )
+# 9-hole layout (ASSUMED - see module docstring): 9 holes, OUT, optional TOT
+_COLUMN_KEYS_9: List[str] = [str(n) for n in range(1, 10)] + ["OUT"]
+_HEADER_LABELS = {str(n) for n in range(1, 19)} | {"OUT", "IN", "TOT"}
 _ROW_LABELS = {"HOLE", "PAR", "INDEX", "DISTANCE"}
 _WORK_WIDTH = 2000  # scorecard is analysed at this width
 _POOL = ThreadPoolExecutor(max_workers=8)
@@ -59,10 +73,14 @@ class ScorecardData:
     stroke_index: Dict[int, int] = field(default_factory=dict)
     distance: Dict[int, int] = field(default_factory=dict)
     players: List[PlayerCard] = field(default_factory=list)
+    holes_on_card: int = 18          # 9 or 18 columns, from the header
+    round_complete: bool = False     # the end-of-round card ("PLAY AGAIN!" is showing)
 
     def to_dict(self) -> dict:
         return {
             "course_name": self.course_name,
+            "holes_on_card": self.holes_on_card,
+            "round_complete": self.round_complete,
             "par": self.par,
             "stroke_index": self.stroke_index,
             "distance": self.distance,
@@ -132,16 +150,6 @@ def _read_number(cell: np.ndarray, lo: int, hi: int) -> Optional[int]:
     if cell.size == 0:
         return None
 
-    cell = cv2.resize(cell, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-    cell = cv2.copyMakeBorder(cell, 12, 12, 12, 12, cv2.BORDER_REPLICATE)
-
-    _, otsu = cv2.threshold(cell, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    # Tesseract wants dark text on a light background. If the border of the
-    # cell is dark (e.g. white digit inside a red circle), flip it.
-    border = np.concatenate([otsu[0, :], otsu[-1, :], otsu[:, 0], otsu[:, -1]])
-    if border.mean() < 127:
-        otsu = cv2.bitwise_not(otsu)
-
     def attempt(image: np.ndarray, psm: int) -> Optional[int]:
         text = pytesseract.image_to_string(
             image, config=f"--psm {psm} -c tessedit_char_whitelist=0123456789"
@@ -150,28 +158,62 @@ def _read_number(cell: np.ndarray, lo: int, hi: int) -> Optional[int]:
             return int(text)
         return None
 
-    # Fast path: one clean read. Only fall back to voting when it fails.
-    first = attempt(otsu, 7)
-    if first is not None:
-        return first
+    def binarise(scale: float) -> Tuple[np.ndarray, np.ndarray, bool]:
+        """(grey cell, dark-text-on-light image, is this a circled/boxed score?)"""
+        img = cell if scale == 1 else cv2.resize(cell, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        # 12px margin: a wider one made Tesseract read the real card's "11" as "1"
+        img = cv2.copyMakeBorder(img, 12, 12, 12, 12, cv2.BORDER_REPLICATE)
+        _, otsu = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # Tesseract wants dark text on a light background. If the whole cell is
+        # dark, flip it.
+        border = np.concatenate([otsu[0, :], otsu[-1, :], otsu[:, 0], otsu[:, -1]])
+        if border.mean() < 127:
+            otsu = cv2.bitwise_not(otsu)
+        # A light cell with a mostly dark middle = a white digit on a dark
+        # disc/square (birdie circles, bogey squares).
+        h, w = otsu.shape
+        boxed = float((otsu[h // 4:3 * h // 4, w // 4:3 * w // 4] == 0).mean()) > 0.45
+        return img, otsu, boxed
 
-    # Circled score (white digit on a dark disc on a light card): Otsu leaves a
-    # black disc with a white digit. Invert, then flood the outside so the digit
-    # is black on an all-white background.
-    disc = cv2.bitwise_not(otsu)
-    if disc[0, 0] == 0:
-        cv2.floodFill(disc, None, (0, 0), 255)
-    for psm in (10, 7):
-        value = attempt(disc, psm)
-        if value is not None:
-            return value
+    def disc_variant(otsu: np.ndarray) -> np.ndarray:
+        # Otsu leaves a black disc with a white digit. Invert, then flood the
+        # outside so the digit is black on an all-white background.
+        disc = cv2.bitwise_not(otsu)
+        if disc[0, 0] == 0:
+            cv2.floodFill(disc, None, (0, 0), 255)
+        return disc
 
+    def read_at(scale: float) -> Optional[int]:
+        _, otsu, boxed = binarise(scale)
+        for variant in ([disc_variant(otsu), otsu] if boxed else [otsu, disc_variant(otsu)]):
+            for psm in (7, 10):
+                value = attempt(variant, psm)
+                if value is not None:
+                    return value
+        return None
+
+    # A cell with no real contrast is blank (e.g. a hole that wasn't played);
+    # don't spend OCR on it. A printed digit has far more contrast than noise.
+    low, high = np.percentile(cell, (1, 99))
+    if high - low < 45:
+        return None
+
+    # No single image size is right for every digit. Enlarged (3-4x) reads the
+    # real GSPro card correctly, including two-digit numbers and circled digits
+    # (small sizes turned "11" into "1" and a circled 2 into 6), but thin plain
+    # digits like 5 and 9 can come back empty there; native size reads those.
+    # So: accept a value only once two different sizes agree, trying the sizes
+    # proven on the real card first; later sizes only matter when those fail.
     votes: Dict[int, int] = {}
-    for image, psm in ((otsu, 10), (cell, 7), (cell, 10), (cv2.bitwise_not(otsu), 7)):
-        value = attempt(image, psm)
-        if value is not None:
-            votes[value] = votes.get(value, 0) + 1
-    return max(votes, key=votes.get) if votes else None
+    for scale in (3.0, 4.0, 2.0, 1.0, 1.5):
+        value = read_at(scale)
+        if value is None:
+            continue
+        votes[value] = votes.get(value, 0) + 1
+        if votes[value] >= 2:
+            return value
+    # No two sizes agreed: take the first size's answer if any, else nothing.
+    return next(iter(votes), None)
 
 
 # ------------------------------------------------------------- table geometry
@@ -194,25 +236,40 @@ def _find_label(words: List[_Word], label: str) -> Optional[_Word]:
     return min(cands, key=lambda w: w.x)
 
 
-def _fit_columns(
+def _header_observations(
     words: List[_Word], hole_label: _Word, width: int
-) -> Tuple[float, float, float]:
-    """
-    Fit column centres: x(k) = x0 + k * pitch for column index k in
-    _COLUMN_KEYS. Returns (x0, pitch, slope) where slope is how much the rows
-    drift in y per pixel of x (non-zero only for tilted photos).
-    """
+) -> List[Tuple[str, float, float]]:
+    """Header cells (label, x, y) found on the HOLE row, e.g. ('7', 842.0, 397.0)."""
     # Header sits at, or slightly above, the HOLE label (rising to the right on
     # a tilted photo). The PAR row is below it, so keep only the upper band.
     y_top = hole_label.y - 0.045 * width
     y_bot = hole_label.y + 0.012 * width
-    obs: List[Tuple[int, float, float]] = []  # (column idx, x, y)
+    found: List[Tuple[str, float, float]] = []
     for w in words:
         if w.x <= hole_label.x + hole_label.w or not (y_top <= w.y <= y_bot):
             continue
-        key = w.text.upper()
-        if key in _COLUMN_KEYS:
-            obs.append((_COLUMN_KEYS.index(key), w.x, w.y))
+        label = w.text.upper()
+        if label in _HEADER_LABELS:
+            found.append((label, w.x, w.y))
+    return found
+
+
+def _pick_layout(labels: set) -> List[str]:
+    """18 columns if the header has any back-nine cell, else the 9-column card."""
+    if "IN" in labels or any(l.isdigit() and int(l) >= 10 for l in labels):
+        return _COLUMN_KEYS_18
+    return _COLUMN_KEYS_9 + (["TOT"] if "TOT" in labels else [])
+
+
+def _fit_columns(
+    observed: List[Tuple[str, float, float]], keys: List[str]
+) -> Tuple[float, float, float]:
+    """
+    Fit column centres: x(k) = x0 + k * pitch for column index k in `keys`.
+    Returns (x0, pitch, slope) where slope is how much the rows drift in y per
+    pixel of x (non-zero only for tilted photos).
+    """
+    obs = [(keys.index(label), x, y) for label, x, y in observed if label in keys]
     if len(obs) < 4:
         raise ScorecardReadError(
             f"Only found {len(obs)} header cells - is a GSPro scorecard on screen?"
@@ -254,11 +311,13 @@ def read_scorecard(frame: np.ndarray, read_distance: bool = False) -> ScorecardD
     if labels["HOLE"] is None or labels["PAR"] is None:
         raise ScorecardReadError("Couldn't find the HOLE / PAR rows - not a scorecard?")
 
-    x0, pitch, slope = _fit_columns(words, labels["HOLE"], width)
     hole_lbl = labels["HOLE"]
+    observed = _header_observations(words, hole_lbl, width)
+    keys = _pick_layout({label for label, _, _ in observed})
+    x0, pitch, slope = _fit_columns(observed, keys)
 
     def col_x(key: str) -> float:
-        return x0 + pitch * _COLUMN_KEYS.index(key)
+        return x0 + pitch * keys.index(key)
 
     def read_row(label_y: float, lo: int, hi: int, keys: List[str], half_h: float) -> Dict[str, Optional[int]]:
         """Read one table row. label_y is where the row's label text sits."""
@@ -278,8 +337,15 @@ def read_scorecard(frame: np.ndarray, read_distance: bool = False) -> ScorecardD
     row_pitch = float(np.median(np.diff(ys))) if len(ys) > 1 else 0.035 * width
     half_h = 0.5 * row_pitch
 
-    hole_keys = [k for k in _COLUMN_KEYS if k.isdigit()]
-    data = ScorecardData()
+    hole_keys = [k for k in keys if k.isdigit()]
+    # Printed totals to read. 18-column card: OUT, IN and the unlabelled last
+    # column. 9-column card: OUT, plus TOT only if the header actually labels it.
+    total_keys = ["OUT", "IN", "TOT"] if keys is _COLUMN_KEYS_18 else [k for k in keys if k in ("OUT", "TOT")]
+    data = ScorecardData(
+        holes_on_card=len(hole_keys),
+        # Only the end-of-round card has the PLAY AGAIN! button
+        round_complete=any(w.text.upper().strip("!.,:") == "AGAIN" for w in words),
+    )
 
     # Course name: text to the left of the word SCORECARD, top of the card
     title = next((w for w in words if w.text.upper() == "SCORECARD"), None)
@@ -329,13 +395,16 @@ def read_scorecard(frame: np.ndarray, read_distance: bool = False) -> ScorecardD
         name = " ".join(w.text for w in sorted(row, key=lambda w: w.x))
         label_y = float(np.mean([w.y for w in row]))
         cells = read_row(label_y, 1, 12, hole_keys, half_h)
-        totals = read_row(label_y, 1, 200, ["OUT", "IN", "TOT"], half_h)
+        totals = read_row(label_y, 1, 200, total_keys, half_h)
 
         card = PlayerCard(name=name)
         card.strokes = {int(k): v for k, v in cells.items() if v is not None}
-        card.out_total, card.in_total, card.total = totals["OUT"], totals["IN"], totals["TOT"]
+        card.out_total, card.in_total, card.total = totals.get("OUT"), totals.get("IN"), totals.get("TOT")
         card.verified = _verify(card)
-        if len(card.strokes) < 3:  # a real player row has scores; this was stray text
+        # A real player row has scores; a row with none (or one stray digit and
+        # no printed total) was just text we mistook for a player.
+        has_total = any(t is not None for t in (card.out_total, card.in_total, card.total))
+        if len(card.strokes) < 3 and not (card.strokes and has_total):
             continue
         data.players.append(card)
 
@@ -343,16 +412,40 @@ def read_scorecard(frame: np.ndarray, read_distance: bool = False) -> ScorecardD
 
 
 def _verify(card: PlayerCard) -> bool:
-    """True when every hole was read and the printed totals agree."""
-    if len(card.strokes) != 18:
+    """
+    True when the row can be trusted: the holes we read are consecutive (a gap
+    means a cell we couldn't read), and every printed total (OUT / IN / TOT)
+    equals the sum of the holes it covers. At least one printed total must be
+    present and match, otherwise nothing was actually checked.
+
+    Works for any number of holes: a 9-hole card is checked against OUT, a
+    partly-filled card against the totals GSPro printed for what was played.
+    """
+    if not card.strokes:
         return False
-    front = sum(card.strokes[h] for h in range(1, 10))
-    back = sum(card.strokes[h] for h in range(10, 19))
-    if card.out_total is not None and card.out_total != front:
+    holes = sorted(card.strokes)
+    if holes != list(range(holes[0], holes[-1] + 1)):
         return False
-    if card.in_total is not None and card.in_total != back:
-        return False
-    if card.total is not None and card.total != front + back:
-        return False
-    # At least one printed total must have matched, otherwise we proved nothing
-    return any(t is not None for t in (card.out_total, card.in_total, card.total))
+
+    front = sum(v for h, v in card.strokes.items() if h <= 9)
+    back = sum(v for h, v in card.strokes.items() if h >= 10)
+    checks = (
+        (card.out_total, front),
+        (card.in_total, back),
+        (card.total, front + back),
+    )
+    printed = [(shown, ours) for shown, ours in checks if shown is not None]
+    return bool(printed) and all(shown == ours for shown, ours in printed)
+
+
+def looks_like_scorecard_panel(frame: np.ndarray) -> bool:
+    """
+    Cheap check (milliseconds, no OCR) for "a big light panel fills the middle
+    of the screen", which is what GSPro's scorecard is. Normal gameplay has
+    sky / fairway / trees there. This only decides whether it's worth running
+    the full read_scorecard(), so a false alarm just costs one wasted read.
+    """
+    gray = _to_gray(frame)
+    h, w = gray.shape
+    band = gray[int(0.35 * h):int(0.65 * h), int(0.10 * w):int(0.90 * w)]
+    return float((band > 170).mean()) > 0.55

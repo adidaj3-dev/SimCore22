@@ -2,12 +2,15 @@ import asyncio
 import json
 from datetime import datetime
 
-import numpy as np
 import pytest
 
-from mvp.engine import engine, engine_loop, round_log, state_writer
+from mvp.engine import engine_loop, round_log
 from mvp.engine.engine_loop import EngineRuntime
-from mvp.engine.models.events import HoleEvent, PlayerEvent, ScoreEvent, ShotEvent
+from mvp.engine.models.events import ShotEvent
+
+
+def _runtime(**kwargs):
+    return EngineRuntime("127.0.0.1", 921, ocr_enabled=False, console_commands=False, **kwargs)
 
 
 # --------------------------------------------------------------- the file itself
@@ -62,72 +65,11 @@ def test_truncated_last_line_is_skipped_but_earlier_rounds_survive(tmp_path):
 
 # ------------------------------------------------- the engine writing to it
 
-@pytest.fixture
-def sandbox(tmp_path, monkeypatch):
-    """Point every output at tmp_path and start from an empty session."""
-    log_path = tmp_path / "data" / "rounds.jsonl"
-    state_dir = tmp_path / "state"
-    monkeypatch.setattr(round_log, "DEFAULT_PATH", log_path)
-    monkeypatch.setattr(state_writer, "STATE_DIR", str(state_dir))
-    monkeypatch.setattr(state_writer, "LEADERBOARD_FILE", str(state_dir / "leaderboard.json"))
-    monkeypatch.setattr(state_writer, "ROUND_SUMMARY_FILE", str(state_dir / "round_summary.json"))
-    monkeypatch.setattr(state_writer, "ADMIN_SNAPSHOT_FILE", str(state_dir / "admin_snapshot.json"))
-    monkeypatch.setattr(engine, "_session_state", engine.SessionState())
-    return tmp_path
-
-
-async def _play(runtime, player, holes):
-    """holes: [(hole_number, par, number_of_shots_hit, confirmed_gross_score)]"""
-    engine.handle_player_event(PlayerEvent(timestamp=datetime.now(), player_name=player))
-    for number, par, n_shots, gross in holes:
-        engine.handle_hole_event(HoleEvent(timestamp=datetime.now(), hole_number=number))
-        for i in range(n_shots):
-            await runtime._handle_shot_event(ShotEvent(
-                source_device="FAKE", timestamp=datetime.now(),
-                ball_speed=140 + i, carry_distance=200 + 10 * i, azimuth=-2.0,
-            ))
-        engine.handle_score_event(ScoreEvent(
-            timestamp=datetime.now(), player_name=player,
-            hole_number=number, gross_score=gross, par=par,
-        ))
-
-
-def _finish_two_player_round(card=None, reason="hole_count"):
-    runtime = EngineRuntime("127.0.0.1", 921, ocr_enabled=False)
-
-    async def go():
-        await _play(runtime, "Jeff", [(1, 4, 3, 4), (2, 3, 2, 3)])
-        await _play(runtime, "Sam", [(1, 4, 5, 6), (2, 3, 3, 4)])
-        await runtime._finalize_round(reason=reason)
-
-    asyncio.run(go())
-    return runtime
-
-
-def test_finishing_a_round_logs_one_line_per_player(sandbox):
-    _finish_two_player_round()
-
-    rounds = round_log.read_rounds(sandbox / "data" / "rounds.jsonl")
-    by_player = {r["player"]: r for r in rounds}
-    assert set(by_player) == {"Jeff", "Sam"}
-    assert by_player["Jeff"]["round_id"] == by_player["Sam"]["round_id"]  # same session
-
-    jeff = by_player["Jeff"]
-    assert jeff["finalize_reason"] == "hole_count"
-    assert jeff["score_source"] == "shot_tally"
-    assert jeff["holes_played"] == 2
-    assert jeff["handicap_was_default"] is True
-    assert jeff["handicap_index_used"] == engine_loop.DEFAULT_STARTING_INDEX
-    assert jeff["shot_devices"] == ["FAKE"]
-    assert len(jeff["shots"]) == 5   # only HIS 3 + 2 shots, not Sam's
-    assert len(by_player["Sam"]["shots"]) == 8
-    assert jeff["hole_scores"][0] == {"hole": 1, "par": 4, "score_used": 4, "gross_score": 4, "shot_tally": 3}
-    assert jeff["stats"]["gross_score"] == 7
-
-
 def _card(verified):
     return {
         "course_name": "Mammoth Dunes",
+        "holes_on_card": 18,
+        "round_complete": True,
         "par": {1: 4, 2: 3},
         "stroke_index": {1: 11, 2: 9},
         # different case than the session's "Jeff": matching must ignore case
@@ -136,19 +78,49 @@ def _card(verified):
     }
 
 
-def _with_scorecard(monkeypatch, card):
-    monkeypatch.setattr("mvp.engine.ocr.capture_windows.capture_game_frame",
-                        lambda *a, **k: np.zeros((10, 10, 3), np.uint8))
-    monkeypatch.setattr(engine_loop, "read_scorecard_from_image", lambda frame: card)
+def _two_player_round(play, reason, card=None):
+    runtime = _runtime()
+
+    async def go():
+        await play(runtime, "Jeff", [(1, 4, 3, 4), (2, 3, 2, 3)])
+        await play(runtime, "Sam", [(1, 4, 5, 6), (2, 3, 3, 4)])
+        await runtime._finalize_round(reason=reason, card=card)
+
+    asyncio.run(go())
+    return runtime
 
 
-def test_verified_scorecard_replaces_the_tally_and_is_recorded_as_the_source(sandbox, monkeypatch):
-    _with_scorecard(monkeypatch, _card(verified=True))
-    _finish_two_player_round()
+def test_finishing_a_round_logs_one_line_per_player(sandbox, logged_rounds, play):
+    _two_player_round(play, "round_end_event")
 
-    by_player = {r["player"]: r for r in round_log.read_rounds(sandbox / "data" / "rounds.jsonl")}
+    by_player = {r["player"]: r for r in logged_rounds()}
+    assert set(by_player) == {"Jeff", "Sam"}
+    assert by_player["Jeff"]["round_id"] == by_player["Sam"]["round_id"]  # same session
+
+    jeff = by_player["Jeff"]
+    assert jeff["round_status"] == "completed"
+    assert jeff["finalize_reason"] == "round_end_event"
+    assert jeff["score_source"] == "shot_tally"
+    assert jeff["holes_played"] == 2
+    assert jeff["handicap_was_default"] is True
+    assert jeff["handicap_index_used"] == engine_loop.DEFAULT_STARTING_INDEX
+    assert jeff["shot_devices"] == ["FAKE"]
+    assert len(jeff["shots"]) == 5   # only HIS 3 + 2 shots, not Sam's
+    assert len(by_player["Sam"]["shots"]) == 8
+    assert jeff["hole_scores"][0] == {
+        "hole": 1, "par": 4, "par_assumed": False, "score_used": 4,
+        "gross_score": 4, "shot_tally": 3, "counted": True,
+    }
+    assert jeff["stats"]["gross_score"] == 7
+
+
+def test_verified_scorecard_replaces_the_tally_and_is_recorded_as_the_source(sandbox, logged_rounds, play):
+    _two_player_round(play, "scorecard", card=_card(verified=True))
+
+    by_player = {r["player"]: r for r in logged_rounds()}
     jeff, sam = by_player["Jeff"], by_player["Sam"]
 
+    assert jeff["round_status"] == "completed"
     assert jeff["score_source"] == "scorecard_ocr_verified"
     assert [h["score_used"] for h in jeff["hole_scores"]] == [5, 3]  # GSPro's numbers, not ours (4, 3)
     assert jeff["stats"]["gross_score"] == 8
@@ -158,24 +130,24 @@ def test_verified_scorecard_replaces_the_tally_and_is_recorded_as_the_source(san
     assert sam["score_source"] == "shot_tally"  # Sam isn't on the card
 
 
-def test_unverified_scorecard_row_is_not_trusted(sandbox, monkeypatch):
-    _with_scorecard(monkeypatch, _card(verified=False))
-    _finish_two_player_round()
+def test_unverified_scorecard_row_is_not_trusted(sandbox, logged_rounds, play):
+    _two_player_round(play, "scorecard", card=_card(verified=False))
 
-    jeff = next(r for r in round_log.read_rounds(sandbox / "data" / "rounds.jsonl") if r["player"] == "Jeff")
+    jeff = next(r for r in logged_rounds() if r["player"] == "Jeff")
     assert jeff["score_source"] == "shot_tally"
     assert [h["score_used"] for h in jeff["hole_scores"]] == [4, 3]  # untouched
     assert jeff["scorecard_ocr"]["matched_row"] is None
     assert jeff["scorecard_ocr"]["players_on_card"] == ["JEFF"]  # still kept for calibration
 
 
-def test_a_logging_failure_never_interrupts_scoring(sandbox, monkeypatch):
+def test_a_logging_failure_never_interrupts_scoring(sandbox, play, monkeypatch):
     def boom(*args, **kwargs):
         raise OSError("disk full")
 
     monkeypatch.setattr(round_log, "append_round", boom)
-    _finish_two_player_round()  # must not raise
+    _two_player_round(play, "round_end_event")  # must not raise
 
     summary = json.loads((sandbox / "state" / "round_summary.json").read_text())
     assert summary["player"] in {"Jeff", "Sam"}
-    assert (sandbox / "state" / "admin_snapshot.json").exists()
+    admin = json.loads((sandbox / "state" / "admin_snapshot.json").read_text())
+    assert {p["name"] for p in admin["players"]} == {"Jeff", "Sam"}  # both players, not just the last

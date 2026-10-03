@@ -21,15 +21,46 @@ GSPro screen capture + OCR  ───────────────┼─�
   Falcon/Hawk packet yet - use `mvp/tools/falcon_packet_decoder.py` on a bay).
 - **Not wired up:** `mvp/engine/server/api.py` (web leaderboard), TrackMan.
 
+## How a round works
+
+GSPro shows its scorecard when the chosen number of holes (9, 18, any) is
+finished - never mid-round. The engine watches for that screen (the one with
+the **PLAY AGAIN!** button), reads it, and finishes the round. A scorecard
+without that button is treated as a mid-round peek and ignored.
+
+| How it ended | Status | Handicap can change? |
+|---|---|---|
+| End-of-round scorecard appears | `completed` | yes (league rounds) |
+| Someone types `end` in the engine window | `ended_early` | no |
+| No activity for 20 min (`SIMCORE_IDLE_MINUTES`) | `abandoned` | no |
+| Someone types `save` | `snapshot` (round continues) | no |
+
+Every way keeps all data and stats; a hole left unfinished when someone quits
+is kept but not counted as a score. Then the next round starts clean
+(handicaps and the current player carry over). Type `help` in the engine
+window for the commands: `end`, `save`, `status`.
+
+Scores come from GSPro's scorecard where it **adds up** (each player's holes
+checked against the printed OUT / IN totals); otherwise from our shot count.
+The scorecard also adds players the live tracking missed, so a round is still
+recorded if HUD tracking never worked.
+
 ## Round log
 
 Every finished round is appended to `data/rounds.jsonl` - one line per player
-per round: hole-by-hole scores, where the scores came from
+per round: status, hole-by-hole scores, where the scores came from
 (`scorecard_ocr_verified` = GSPro's own scorecard, `shot_tally` = our shot
-count), every shot captured, the stats, and the raw scorecard reading. It is
-append-only, survives restarts, and is git-ignored (it holds player names).
-This is not a database - it's the evidence for deciding what the database
-should store. Read it with `mvp.engine.round_log.read_rounds()`.
+count), every shot captured, the stats, and the raw scorecard reading. Each
+end-of-round scorecard screenshot is kept in `data/scorecards/` so any logged
+round can be checked against what GSPro showed. A `snapshot` line shares its
+`round_id` with the round's final line - use the latest line per `round_id`.
+The log is append-only, survives restarts, and is git-ignored (it holds player
+names). It is not a database - it's the evidence for deciding what the
+database should store. Read it with `mvp.engine.round_log.read_rounds()`.
+
+**Assumption to confirm on the bay:** the 9-hole scorecard layout (columns
+1-9, OUT, optional TOT) is a guess; only the 18-hole card has been checked
+against a real GSPro card.
 
 ## Set up a bay PC (once)
 

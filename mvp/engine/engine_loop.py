@@ -1,9 +1,33 @@
 # mvp/engine/engine_loop.py
+"""
+Wires ingestion -> engine -> outputs, and owns the life of a round.
+
+How a round ends (each way saves the data and stats; they differ in status):
+
+  completed    GSPro shows its end-of-round scorecard (it appears when the chosen
+               number of holes - 9, 18, any - is finished; never mid-round).
+               Scores come from that card where it reads as consistent.
+  ended_early  Someone types `end` in the engine console (or any source emits a
+               RoundEndEvent): the player stopped. Everything played so far is
+               kept; the hole in progress is not counted.
+  abandoned    Nothing happened for ROUND_IDLE_TIMEOUT_MINUTES. Saved as-is.
+  snapshot     `save` in the console: a checkpoint of the round so far. The round
+               keeps going; the final record shares its round_id.
+
+Only `completed` rounds can update a handicap. After any round ends the session
+is reset (handicaps carried over) so the next round starts clean and is logged.
+"""
 import asyncio
 import logging
+import sys
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
+
+import cv2
 
 from mvp.engine import config, round_log
 from mvp.engine.logging_config import setup_logging
@@ -11,8 +35,11 @@ from mvp.engine.ingestion.dispatcher import EventDispatcher
 from mvp.engine.ingestion.foresight.listener import ForesightLiveListener
 from mvp.engine.ocr.ocr_listener import OCRHudListener
 from mvp.engine.ocr.scorecard import read_scorecard_from_image
+from mvp.engine.ocr.scorecard_reader import looks_like_scorecard_panel
 
-from mvp.engine.models.events import ShotEvent, PlayerEvent, HoleEvent, ScoreEvent
+from mvp.engine.models.events import (
+    ShotEvent, PlayerEvent, HoleEvent, ScoreEvent, RoundEndEvent,
+)
 from mvp.engine import engine
 
 from mvp.engine.analyzer.analyzer import analyze_round
@@ -37,6 +64,21 @@ logger = logging.getLogger(__name__)
 # Picked, not measured - tune once real league data exists.
 DEFAULT_STARTING_INDEX = 18
 
+# Why a round ended -> what to call it in the log.
+_STATUS_BY_REASON = {
+    "scorecard": "completed",
+    "round_end_event": "completed",
+    "manual_end": "ended_early",
+    "idle_timeout": "abandoned",
+}
+
+CONSOLE_HELP = """\
+Engine commands (type one, press Enter):
+  end     finish the round now and save it (use when a player quits early)
+  save    checkpoint the round so far; play continues
+  status  show who is playing and how far along they are
+  help    show this list"""
+
 
 class EngineRuntime:
     def __init__(
@@ -47,6 +89,8 @@ class EngineRuntime:
         window_title: str = config.CAPTURE_WINDOW_TITLE,
         monitor_index: int = config.CAPTURE_MONITOR_INDEX,
         ocr_poll_interval: float = 1.0,
+        idle_timeout_minutes: float = config.ROUND_IDLE_TIMEOUT_MINUTES,
+        console_commands: bool = True,
     ):
         self.dispatcher = EventDispatcher()
 
@@ -80,9 +124,19 @@ class EngineRuntime:
         self.handicap_engine = HandicapEngine()
         self.schedule_config = ScheduleConfig()
 
-        # Round completion tracking
+        # Round tracking
+        self.idle_timeout = timedelta(minutes=idle_timeout_minutes)
+        self.console_commands = console_commands
         self.last_event_time = datetime.now()
-        self.round_complete = False
+        self._round_id: Optional[str] = None  # shared by snapshots and the final record
+
+        # End-of-round scorecard detection (see _check_for_scorecard)
+        self._card_handled = False       # this on-screen card was already processed
+        self._card_present_polls = 0     # consecutive polls with a card-like panel
+        self._card_absent_polls = 0      # consecutive polls without one (after handling)
+        self._card_retry_after = 0.0     # monotonic time before re-reading a non-card
+
+    # ------------------------------------------------------------------ running
 
     async def start(self) -> None:
         logger.info("Starting SimCore22 Engine Runtime...")
@@ -95,6 +149,7 @@ class EngineRuntime:
         if self.ocr_listener:
             tasks.append(asyncio.create_task(self._ocr_capture_loop()))
 
+        self._start_console_commands(asyncio.get_running_loop())
         await asyncio.gather(*tasks)
 
     async def _ocr_capture_loop(self) -> None:
@@ -106,6 +161,7 @@ class EngineRuntime:
           fullscreen. Log it once with the fix, and skip OCR on those frames.
         - Any other failure is logged and retried; it never kills the engine.
           `python -m mvp.tools.bay_check` diagnoses all of the above.
+        - Every good frame is also checked for the end-of-round scorecard.
         """
         # Imported here so this module still imports on non-Windows machines.
         from mvp.engine.ocr.capture_windows import capture_game_frame
@@ -134,6 +190,7 @@ class EngineRuntime:
                 else:
                     black_logged = False
                     await self.ocr_listener.process_frame(frame)
+                    await self._check_for_scorecard(frame)
             except GameWindowNotFound as exc:
                 if not waiting_logged:
                     logger.warning(f"[OCR] Waiting for {target}: {exc}")
@@ -148,15 +205,12 @@ class EngineRuntime:
         while True:
             event = await self.dispatcher.next_event(timeout=1.0)
 
-            # Check inactivity timeout
-            if datetime.now() - self.last_event_time > timedelta(minutes=1):
-                await self._finalize_round(reason="inactivity")
-                continue
-
             if event is None:
+                # A quiet second: has the round been abandoned?
+                if self._session_has_data() and datetime.now() - self.last_event_time > self.idle_timeout:
+                    await self._finalize_round(reason="idle_timeout")
                 continue
 
-            # Update last event time
             self.last_event_time = datetime.now()
 
             # Route event
@@ -172,7 +226,12 @@ class EngineRuntime:
             elif isinstance(event, ScoreEvent):
                 engine.handle_score_event(event)
                 self._refresh_leaderboard()  # push the confirmed score, not just the last shot tally
-                await self._maybe_handle_round_completion(event)
+
+            elif isinstance(event, RoundEndEvent):
+                # "completed" = the source says the round finished; anything
+                # else (e.g. "manual_end") is a stop before the end.
+                reason = "round_end_event" if event.reason == "completed" else event.reason
+                await self._finalize_round(reason=reason)
 
     async def _handle_shot_event(self, shot: ShotEvent) -> None:
         try:
@@ -220,261 +279,423 @@ class EngineRuntime:
             players=players_json,
         )
 
-    async def _maybe_handle_round_completion(self, score_event: ScoreEvent) -> None:
-        player_name = score_event.player_name.strip()
-        if not player_name:
-            return
+    # ------------------------------------------------- end-of-round detection
 
-        # Check hole count
-        session_state = engine.get_session_state()
-        round_state = session_state.players.get(player_name)
-        if not round_state:
-            return
-
-        holes_played = len(round_state.holes)
-
-        if holes_played >= 9 or holes_played >= 18:
-            await self._finalize_round(reason="hole_count")
-
-        # Handicap update
-        now = datetime.now()
-        round_type = classify_round_by_time(now, self.schedule_config)
-
-        if should_update_handicap(
-            player_name,
-            self.league_config,
-            self.league_state,
-            round_type,
-        ):
-            new_index = self.handicap_engine.update_player_handicap(
-                player_name,
-                session_state,
-            )
-            logger.info(f"[HANDICAP] Updated index for {player_name}: {new_index}")
-
-    def _apply_scorecard_overrides(self, session_state) -> tuple[dict, dict]:
+    async def _check_for_scorecard(self, frame) -> None:
         """
-        At round end, OCR the GSPro scorecard screen and - only where it reads
-        as internally consistent (see ScorecardData.verified) - use its printed
-        scores in place of the live shot tally. The tally can drift (a missed
-        or doubled shot detection); the printed scorecard is GSPro's own math.
-        Safe to call even if no scorecard is on screen: it just logs and the
-        shot-tallied scores stand.
+        Called with every good frame. When GSPro's end-of-round scorecard is on
+        screen, read it once and finish the round.
 
-        Returns (card, applied): the parsed scorecard ({} if none) and, for each
-        player whose scores were taken from it, their scorecard row. The round
-        log uses this to record where every score came from.
+        Cheap test first (looks_like_scorecard_panel, milliseconds): only a big
+        light panel in the middle of the screen is worth the ~5s full read, and
+        it must be there on two polls in a row (the card may animate in). A
+        panel that turns out not to be a scorecard (bright sky) is not re-read
+        for a few seconds. The read runs in a worker thread so the engine keeps
+        processing events. A scorecard WITHOUT the PLAY AGAIN! button is a
+        mid-round view and is ignored. After a card is handled it is not read
+        again until it has left the screen.
+        """
+        present = looks_like_scorecard_panel(frame)
+
+        if self._card_handled:
+            self._card_absent_polls = 0 if present else self._card_absent_polls + 1
+            if self._card_absent_polls >= 3:
+                self._card_handled = False
+                self._card_present_polls = 0
+            return
+
+        if not present:
+            self._card_present_polls = 0
+            return
+
+        self._card_present_polls += 1
+        if self._card_present_polls < 2 or time.monotonic() < self._card_retry_after:
+            return
+
+        card = await asyncio.to_thread(read_scorecard_from_image, frame)
+        if not card or not card.get("players"):
+            self._card_retry_after = time.monotonic() + 5.0
+            return
+
+        self._card_handled = True
+        self._card_absent_polls = 0
+        if not card.get("round_complete"):
+            logger.info("[ROUND] A scorecard is on screen without PLAY AGAIN! - "
+                        "treating it as a mid-round view and ignoring it.")
+            return
+
+        card["image_file"] = self._save_scorecard_image(frame)
+        logger.info("[ROUND] End-of-round scorecard detected.")
+        await self._finalize_round(reason="scorecard", card=card)
+
+    def _save_scorecard_image(self, frame) -> Optional[str]:
+        """Keep the screenshot so the logged round can be checked against it."""
+        if not config.SAVE_SCORECARD_IMAGES:
+            return None
+        try:
+            folder = Path(round_log.DEFAULT_PATH).parent / "scorecards"
+            folder.mkdir(parents=True, exist_ok=True)
+            name = f"scorecard_{datetime.now():%Y%m%d_%H%M%S}_{self._current_round_id()[:6]}.png"
+            path = folder / name
+            cv2.imwrite(str(path), frame)
+            return str(path)
+        except Exception:
+            logger.exception("[ROUND] Couldn't save the scorecard image.")
+            return None
+
+    # ------------------------------------------------------------ round state
+
+    def _current_round_id(self) -> str:
+        if self._round_id is None:
+            self._round_id = uuid.uuid4().hex
+        return self._round_id
+
+    @staticmethod
+    def _player_has_data(round_state) -> bool:
+        return any(h.gross_score is not None or h.strokes > 0 for h in round_state.holes.values())
+
+    def _session_has_data(self) -> bool:
+        return any(self._player_has_data(rs) for rs in engine.get_session_state().players.values())
+
+    def _reset_round(self) -> None:
+        """Start the next round clean (handicaps and the current player carry over)."""
+        engine.reset_session()
+        self.shots.clear()
+        self._round_id = None
+        self.last_event_time = datetime.now()
+
+    def _apply_scorecard(self, session_state, card: dict) -> dict:
+        """
+        Use the GSPro scorecard's printed scores - only for rows that read as
+        internally consistent (ScorecardData.verified) - in place of the live
+        shot tally, which can miss or double-count a shot. A verified player who
+        isn't in the session yet (the HUD tracking missed them) is added from
+        the card, so a round is still recorded if live tracking never worked.
+
+        Returns {player_name: scorecard_row} for the players it applied.
         """
         applied: dict = {}
-        try:
-            from mvp.engine.ocr.capture_windows import capture_game_frame
-
-            frame = capture_game_frame(self.window_title, self.monitor_index)
-        except Exception:
-            logger.info("[ROUND] Couldn't capture a frame for scorecard verification; using shot tally.")
-            return {}, applied
-
-        card = read_scorecard_from_image(frame)
-        if not card or not card.get("players"):
-            logger.info("[ROUND] No scorecard on screen (or it didn't parse); using shot tally.")
-            return {}, applied
-
-        for player_name, round_state in session_state.players.items():
-            match = next(
-                (p for p in card["players"] if p["name"].strip().lower() == player_name.strip().lower()),
-                None,
-            )
-            if match is None or not match.get("verified"):
-                logger.info(f"[ROUND] No verified scorecard row for {player_name}; using shot tally.")
+        for row in card.get("players", []):
+            if not row.get("verified"):
+                logger.info(f"[ROUND] Scorecard row for {row['name']} didn't add up; not trusting it.")
                 continue
 
-            for hole_num, score in match["strokes"].items():
+            round_state = engine.find_player(row["name"]) or engine.get_or_create_round_state(row["name"])
+            for hole_num, score in row["strokes"].items():
                 hole_state = round_state.holes.setdefault(hole_num, engine.HoleState(hole_number=hole_num))
                 hole_state.gross_score = score
                 if hole_num in card.get("par", {}):
                     hole_state.par = card["par"][hole_num]
 
-            applied[player_name] = match
-            logger.info(f"[ROUND] Applied verified scorecard for {player_name}: "
-                        f"{len(match['strokes'])} holes, total {match['total']}")
+            applied[round_state.player_name] = row
+            logger.info(f"[ROUND] Applied verified scorecard for {round_state.player_name}: "
+                        f"{len(row['strokes'])} holes, total {row['gross']}")
+        return applied
 
-        return card, applied
+    def _compute_player(self, player_name: str, round_state, status: str) -> dict:
+        """Hole-by-hole record, shots and stats for one player, as of now."""
+        holes, scorecard = [], []
+        for hole_num, hole in sorted(round_state.holes.items()):
+            if hole.gross_score is None and hole.strokes <= 0:
+                continue  # seen on the HUD but nothing happened on it
+            # Quitting mid-hole must not count that hole as a score
+            in_progress = (
+                hole.gross_score is None and status != "completed" and hole_num == round_state.current_hole
+            )
+            par_assumed = hole.par is None
+            par = 4 if par_assumed else hole.par  # unknown par: assume 4 (flagged in the log)
+            score = hole.gross_score if hole.gross_score is not None else hole.strokes
+            holes.append({
+                "hole": hole_num, "par": hole.par, "par_assumed": par_assumed,
+                "score_used": score, "gross_score": hole.gross_score, "shot_tally": hole.strokes,
+                "counted": not in_progress,
+            })
+            if not in_progress:
+                scorecard.append({
+                    "hole_number": hole_num, "par": par, "score": score,
+                    "putts": hole.putts, "fairway_hit": hole.fairway_hit,
+                    "green_in_reg": hole.green_in_reg, "proximity": hole.proximity,
+                    "sand": hole.sand, "up_and_down_attempt": hole.up_and_down_attempt,
+                    "up_and_down_success": hole.up_and_down_success,
+                })
+
+        # handle_shot_event stamps metadata["player_name"]
+        player_shots = [s for s in self.shots if s.metadata.get("player_name") == player_name]
+
+        starting_index = round_state.handicap_index
+        was_default = starting_index is None
+        if was_default:
+            starting_index = DEFAULT_STARTING_INDEX
+            logger.info(f"[ROUND] {player_name} has no handicap on record; "
+                        f"using default starting index {DEFAULT_STARTING_INDEX}.")
+
+        stats = analyze_round(
+            shots=player_shots,
+            scorecard=scorecard,
+            simcore_index_before=starting_index,
+            outdoor_handicap_start=starting_index,
+            round_notes=f"Auto summary ({status})",
+        )
+        return {
+            "holes": holes, "holes_counted": len(scorecard), "shots": player_shots,
+            "starting_index": starting_index, "handicap_was_default": was_default, "stats": stats,
+        }
+
+    def _update_handicap(self, player_name: str, session_state, stats: dict) -> Optional[int]:
+        """
+        Count this league round and, if the league's schedule says it's time,
+        recompute the player's handicap. Never raises - a handicap problem must
+        not stop the round being saved.
+
+        NOTE: nothing configures leagues yet (schedule windows, round numbers),
+        so in practice this only runs once those are set up.
+        """
+        try:
+            self.league_state.mark_round_completed(player_name)
+            if not should_update_handicap(player_name, self.league_config, self.league_state, "league"):
+                return None
+            round_state = session_state.players[player_name]
+            if round_state.handicap_index is None:  # first league round: start from the default
+                round_state.handicap_index = DEFAULT_STARTING_INDEX
+            old = round_state.handicap_index
+            new = self.handicap_engine.update_player_handicap(player_name, session_state)
+            stats["simcore_index_after"] = new
+            stats["simcore_index_delta"] = float(new - old)
+            logger.info(f"[HANDICAP] Updated index for {player_name}: {old} -> {new}")
+            return new
+        except Exception:
+            logger.exception(f"[HANDICAP] Couldn't update the handicap for {player_name}.")
+            return None
 
     def _log_round(
         self,
         *,
         round_id: str,
         reason: str,
+        status: str,
         round_type: str,
         player_name: str,
-        round_state,
         course_name: str,
-        starting_index: int,
-        handicap_was_default: bool,
-        player_shots: list,
-        stats: dict,
+        computed: dict,
         card: dict,
-        card_row: dict | None,
+        card_row: Optional[dict],
+        handicap_after: Optional[int],
     ) -> None:
-        """
-        Append this player's round to data/rounds.jsonl. Never raises: a logging
-        problem (disk full, locked file) must not interrupt scoring.
-        """
+        """Append this player's round to data/rounds.jsonl. Never raises."""
         try:
-            holes = [
-                {
-                    "hole": hole_num,
-                    "par": hole.par,
-                    "score_used": hole.gross_score or hole.strokes,
-                    "gross_score": hole.gross_score,
-                    "shot_tally": hole.strokes,
-                }
-                for hole_num, hole in sorted(round_state.holes.items())
-            ]
             round_log.append_round({
                 "round_id": round_id,
                 "finished_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                # completed | ended_early | abandoned | snapshot. A snapshot is a
+                # checkpoint: the final record for the round has the same round_id.
+                "round_status": status,
                 "finalize_reason": reason,
                 "round_type": round_type,
                 "player": player_name,
                 "course": course_name,
-                "holes_played": len(holes),
+                "holes_played": computed["holes_counted"],
                 # Where the scores came from: GSPro's own verified scorecard, or
                 # our count of shots (which can miss or double-count a shot).
                 "score_source": "scorecard_ocr_verified" if card_row else "shot_tally",
-                "handicap_index_used": starting_index,
-                "handicap_was_default": handicap_was_default,
-                "hole_scores": holes,
-                "stats": stats,
-                "shot_devices": sorted({s.source_device for s in player_shots}),
-                "shots": player_shots,
+                "handicap_index_used": computed["starting_index"],
+                "handicap_was_default": computed["handicap_was_default"],
+                "handicap_index_after": handicap_after,
+                "hole_scores": computed["holes"],
+                "stats": computed["stats"],
+                "shot_devices": sorted({s.source_device for s in computed["shots"]}),
+                "shots": computed["shots"],
                 "scorecard_ocr": {
-                    "course_name": card.get("course_name") if card else None,
-                    "par": card.get("par") if card else None,
-                    "stroke_index": card.get("stroke_index") if card else None,
-                    "players_on_card": [p["name"] for p in card.get("players", [])] if card else [],
+                    "image_file": card.get("image_file"),
+                    "course_name": card.get("course_name"),
+                    "holes_on_card": card.get("holes_on_card"),
+                    "round_complete": card.get("round_complete"),
+                    "par": card.get("par"),
+                    "stroke_index": card.get("stroke_index"),
+                    "players_on_card": [p["name"] for p in card.get("players", [])],
                     "matched_row": card_row,
                 },
             })
         except Exception:
             logger.exception("[ROUND] Couldn't write round log entry (scoring unaffected).")
 
-    async def _finalize_round(self, reason: str = "unknown") -> None:
-        if self.round_complete:
+    # -------------------------------------------------------- finishing a round
+
+    async def _finalize_round(self, reason: str = "unknown", card: Optional[dict] = None) -> list:
+        """
+        End the round: apply the scorecard (if given), compute stats, update
+        handicaps (completed league rounds only), log, write the state files,
+        then reset for the next round. Returns [(player, holes_counted)].
+
+        Contains no `await`, so it runs start-to-finish without the engine loop
+        interleaving events halfway through a round's results.
+        """
+        status = _STATUS_BY_REASON.get(reason, "ended_early")
+        card = card or {}
+        session_state = engine.get_session_state()
+        results: list = []
+
+        try:
+            applied = self._apply_scorecard(session_state, card) if card else {}
+
+            if not self._session_has_data():
+                logger.info(f"[ROUND] Round end ({reason}) but nothing was recorded; nothing to save.")
+                return results
+
+            logger.info(f"[ROUND] Finalizing round (trigger: {reason}, status: {status})...")
+            self._refresh_leaderboard()  # final standings incl. the verified scorecard scores
+
+            round_id = self._current_round_id()
+            round_type = classify_round_by_time(datetime.now(), self.schedule_config)
+            course_name = card.get("course_name") or "Unknown"
+            admin_players = []
+
+            for player_name, round_state in list(session_state.players.items()):
+                if not self._player_has_data(round_state):
+                    continue
+                try:
+                    computed = self._compute_player(player_name, round_state, status)
+                    stats = computed["stats"]
+
+                    handicap_after = None
+                    if status == "completed" and round_type == "league":
+                        handicap_after = self._update_handicap(player_name, session_state, stats)
+
+                    self._log_round(
+                        round_id=round_id, reason=reason, status=status, round_type=round_type,
+                        player_name=player_name, course_name=course_name, computed=computed,
+                        card=card, card_row=applied.get(player_name), handicap_after=handicap_after,
+                    )
+
+                    write_round_summary_state({
+                        "player": player_name,
+                        "course": course_name,
+                        "holes": computed["holes_counted"],
+                        "gross": stats["gross_score"],
+                        "score_vs_par": stats["gross_vs_par"],
+                        "net": stats["net_score"],
+                        "simcore_index": stats["simcore_index_before"],
+                        "round_status": status,
+                        "ball_flight": {
+                            "avg_bs": stats["avg_ball_speed"],
+                            "max_bs": stats["max_ball_speed"],
+                            "avg_carry": stats["avg_carry"],
+                        },
+                        "scoring": {
+                            "birdies": stats["birdies"],
+                            "pars": stats["pars"],
+                            "bogeys": stats["bogeys"],
+                        },
+                        "league": {
+                            "stableford": stats["stableford_points"],
+                            "quota": stats["quota_points"],
+                            "points_target": 36,
+                        },
+                        "raw": stats,
+                    })
+
+                    admin_players.append({
+                        "name": player_name,
+                        "outdoor_ghin": stats["outdoor_handicap_start"],
+                        "simcore_index_start": stats["simcore_index_before"],
+                        "simcore_index_current": stats["simcore_index_after"],
+                        "practice_score": None,
+                        "week_scores": [stats["gross_score"]],
+                        "total_individual_points": stats["points_earned"],
+                        "points_per_round": [stats["points_earned"]],
+                        "team_points": 0,
+                    })
+                    results.append((player_name, computed["holes_counted"]))
+                except Exception:
+                    logger.exception(f"[ROUND] Couldn't finish {player_name}'s round.")
+
+            if admin_players:
+                write_admin_snapshot_state(
+                    league_name="Default League",
+                    week=1,
+                    players=admin_players,
+                    teams=[{"name": "Team A", "points": 0}],
+                )
+            logger.info(f"[ROUND] Saved {len(results)} player round(s). Ready for the next round.")
+            return results
+        finally:
+            # Always reset - even if something above failed, a stuck round
+            # would swallow every round after it.
+            self._reset_round()
+
+    def _save_round_snapshot(self) -> list:
+        """Checkpoint the round so far to the log. Play continues; nothing resets."""
+        session_state = engine.get_session_state()
+        round_id = self._current_round_id()
+        round_type = classify_round_by_time(datetime.now(), self.schedule_config)
+        saved: list = []
+        for player_name, round_state in list(session_state.players.items()):
+            if not self._player_has_data(round_state):
+                continue
+            try:
+                computed = self._compute_player(player_name, round_state, "snapshot")
+                self._log_round(
+                    round_id=round_id, reason="manual_save", status="snapshot", round_type=round_type,
+                    player_name=player_name, course_name="Unknown", computed=computed,
+                    card={}, card_row=None, handicap_after=None,
+                )
+                saved.append((player_name, computed["holes_counted"]))
+            except Exception:
+                logger.exception(f"[ROUND] Couldn't snapshot {player_name}.")
+        return saved
+
+    # --------------------------------------------------------- console commands
+
+    async def handle_command(self, command: str) -> str:
+        """Run one console command; returns the text to show. (Also usable by a future admin portal.)"""
+        cmd = command.strip().lower()
+
+        if cmd in ("end", "e"):
+            if not self._session_has_data():
+                return "No round in progress - nothing to end."
+            results = await self._finalize_round(reason="manual_end")
+            who = ", ".join(f"{name} ({holes} holes)" for name, holes in results)
+            return f"Round ended and saved: {who or 'nothing to save'}."
+
+        if cmd in ("save", "s"):
+            saved = self._save_round_snapshot()
+            if not saved:
+                return "No round in progress - nothing to save."
+            who = ", ".join(f"{name} ({holes} holes)" for name, holes in saved)
+            return f"Checkpoint saved: {who}. The round continues."
+
+        if cmd == "status":
+            session = engine.get_session_state()
+            players = [
+                f"{name}: {sum(1 for h in rs.holes.values() if h.gross_score is not None or h.strokes > 0)} holes"
+                for name, rs in session.players.items() if self._player_has_data(rs)
+            ]
+            if not players:
+                return "No round in progress."
+            idle = int((datetime.now() - self.last_event_time).total_seconds() // 60)
+            return f"Round in progress - {'; '.join(players)}. {len(self.shots)} shots. Idle {idle} min."
+
+        if cmd in ("help", "?"):
+            return CONSOLE_HELP
+        return f"Unknown command '{command}'. Type help."
+
+    def _start_console_commands(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Read commands from the console in a background thread (only if one is attached)."""
+        if not self.console_commands or not sys.stdin or not sys.stdin.isatty():
             return
 
-        self.round_complete = True
-        logger.info(f"[ROUND] Finalizing round (trigger: {reason})...")
+        def worker() -> None:
+            print(CONSOLE_HELP)
+            for line in sys.stdin:
+                command = line.strip()
+                if not command:
+                    continue
+                future = asyncio.run_coroutine_threadsafe(self.handle_command(command), loop)
+                try:
+                    print(future.result(timeout=60))
+                except Exception as exc:
+                    print(f"Command failed: {exc}")
 
-        session_state = engine.get_session_state()
-        card, applied = self._apply_scorecard_overrides(session_state)
-        round_id = uuid.uuid4().hex
-        round_type = classify_round_by_time(datetime.now(), self.schedule_config)
-        course_name = (card.get("course_name") if card else None) or "Unknown"
-
-        # Build scorecard + shots per player
-        for player_name, round_state in session_state.players.items():
-            scorecard = []
-            for hole_num, hole in round_state.holes.items():
-                scorecard.append({
-                    "hole_number": hole_num,
-                    "par": hole.par,
-                    "score": hole.gross_score or hole.strokes,
-                    "putts": hole.putts,
-                    "fairway_hit": hole.fairway_hit,
-                    "green_in_reg": hole.green_in_reg,
-                    "proximity": hole.proximity,
-                    "sand": hole.sand,
-                    "up_and_down_attempt": hole.up_and_down_attempt,
-                    "up_and_down_success": hole.up_and_down_success,
-                })
-
-            # Filter shots for this player (handle_shot_event stamps player_name, not "player")
-            player_shots = [s for s in self.shots if s.metadata.get("player_name") == player_name]
-
-            starting_index = round_state.handicap_index
-            handicap_was_default = starting_index is None
-            if handicap_was_default:
-                starting_index = DEFAULT_STARTING_INDEX
-                logger.info(f"[ROUND] {player_name} has no handicap on record; "
-                            f"using default starting index {DEFAULT_STARTING_INDEX}.")
-
-            stats = analyze_round(
-                shots=player_shots,
-                scorecard=scorecard,
-                simcore_index_before=starting_index,
-                outdoor_handicap_start=starting_index,
-                round_notes="Auto summary",
-            )
-
-            self._log_round(
-                round_id=round_id,
-                reason=reason,
-                round_type=round_type,
-                player_name=player_name,
-                round_state=round_state,
-                course_name=course_name,
-                starting_index=starting_index,
-                handicap_was_default=handicap_was_default,
-                player_shots=player_shots,
-                stats=stats,
-                card=card,
-                card_row=applied.get(player_name),
-            )
-
-            # Write summary JSON
-            summary_payload = {
-                "player": player_name,
-                "course": course_name,
-                "holes": len(scorecard),
-                "gross": stats["gross_score"],
-                "score_vs_par": stats["gross_vs_par"],
-                "net": stats["net_score"],
-                "simcore_index": stats["simcore_index_before"],
-                "ball_flight": {
-                    "avg_bs": stats["avg_ball_speed"],
-                    "max_bs": stats["max_ball_speed"],
-                    "avg_carry": stats["avg_carry"],
-                },
-                "scoring": {
-                    "birdies": stats["birdies"],
-                    "pars": stats["pars"],
-                    "bogeys": stats["bogeys"],
-                },
-                "league": {
-                    "stableford": stats["stableford_points"],
-                    "quota": stats["quota_points"],
-                    "points_target": 36,
-                },
-                "raw": stats,
-            }
-
-            write_round_summary_state(summary_payload)
-
-            # Admin snapshot
-            players_admin = [{
-                "name": player_name,
-                "outdoor_ghin": stats["outdoor_handicap_start"],
-                "simcore_index_start": stats["simcore_index_before"],
-                "simcore_index_current": stats["simcore_index_after"],
-                "practice_score": None,
-                "week_scores": [stats["gross_score"]],
-                "total_individual_points": stats["points_earned"],
-                "points_per_round": [stats["points_earned"]],
-                "team_points": 0,
-            }]
-
-            teams = [{"name": "Team A", "points": 0}]
-
-            write_admin_snapshot_state(
-                league_name="Default League",
-                week=1,
-                players=players_admin,
-                teams=teams,
-            )
-
-        logger.info("[ROUND] Summary + admin snapshot written.")
-        logger.info("[ROUND] Ready for next round.")
+        threading.Thread(target=worker, name="simcore-console", daemon=True).start()
 
 
 def main() -> None:
