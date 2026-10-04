@@ -68,8 +68,9 @@ export function sparkline(values) {
   return svg;
 }
 
-/** Score-to-par over time. points: [{label, value}] oldest first. UP means better. */
-export function lineChart(points, { height = 210 } = {}) {
+/** A value over time. points: [{label, value}] oldest first. UP means better (lower value).
+ *  `format` turns a value into axis text; the default writes scores to par (E, +2, -1). */
+export function lineChart(points, { height = 210, format = toPar } = {}) {
   const W = 640, H = height, padL = 38, padR = 12, padT = 14, padB = 28;
   const svg = s('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Score to par by round; higher on the chart is better' });
   if (points.length === 0) return svg;
@@ -83,9 +84,9 @@ export function lineChart(points, { height = 210 } = {}) {
   const step = Math.max(1, Math.ceil((hi - lo) / 4));
   for (let t = Math.ceil(lo / step) * step; t <= hi; t += step) {
     if (t === 0) continue;
-    svg.append(s('line', { class: 'grid', x1: padL, x2: W - padR, y1: y(t), y2: y(t) }), s('text', { x: padL - 8, y: y(t) + 4, 'text-anchor': 'end' }, toPar(t)));
+    svg.append(s('line', { class: 'grid', x1: padL, x2: W - padR, y1: y(t), y2: y(t) }), s('text', { x: padL - 8, y: y(t) + 4, 'text-anchor': 'end' }, format(t)));
   }
-  svg.append(s('line', { class: 'zero', x1: padL, x2: W - padR, y1: y(0), y2: y(0) }), s('text', { x: padL - 8, y: y(0) + 4, 'text-anchor': 'end' }, 'E'));
+  svg.append(s('line', { class: 'zero', x1: padL, x2: W - padR, y1: y(0), y2: y(0) }), s('text', { x: padL - 8, y: y(0) + 4, 'text-anchor': 'end' }, format(0)));
 
   const id = `lg${uid++}`;
   const line = points.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
@@ -95,7 +96,7 @@ export function lineChart(points, { height = 210 } = {}) {
     points.length > 1 ? s('polygon', { points: `${x(0)},${padT} ${line} ${x(points.length - 1)},${padT}`, fill: `url(#${id})` }) : null,
     points.length > 1 ? s('polyline', { points: line, fill: 'none', stroke: 'var(--brand)', 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }) : null);
   points.forEach((p, i) => svg.append(s('circle', { cx: x(i), cy: y(p.value), r: 4.5, fill: 'var(--surface)', stroke: 'var(--brand)', 'stroke-width': 2.5 },
-    s('title', {}, `${p.label}: ${toPar(p.value)}`))));
+    s('title', {}, `${p.label}: ${format(p.value)}`))));
 
   const every = Math.max(1, Math.ceil(points.length / 6));
   points.forEach((p, i) => { if (i % every === 0 || i === points.length - 1) svg.append(s('text', { x: x(i), y: H - 8, 'text-anchor': 'middle' }, p.label)); });

@@ -1,5 +1,5 @@
 @echo off
-REM Opens the SimCore22 web UI (live leaderboard + admin portal) on your real data.
+REM Opens the SimCore22 web UI (player app, live leaderboard, admin portal) on your real data.
 REM The engine (run_bay.bat) records rounds; this only shows them, so it can run on its own.
 setlocal
 cd /d "%~dp0"

@@ -215,3 +215,14 @@ html, body { height: 100%; overflow: hidden; }
   .name { font-size: 1.02rem; } .meta { font-size: .8rem; } .thru-text { font-size: .8rem; } .c-par { font-size: 2rem; } .avatar { display: none; }
   .legend { display: none; } .foot { grid-template-columns: 1fr; }
 }
+
+/* ------------------------------------------------------------ league picker (first run on a screen) */
+.picker { display: grid; align-content: center; justify-items: center; gap: 18px; min-height: 100vh; padding: 40px 24px; text-align: center; }
+.picker h1 { font-size: clamp(28px, 4vw, 44px); font-weight: 780; letter-spacing: -.03em; }
+.picker p { color: var(--text-2); }
+.picker .picks { display: grid; gap: 12px; width: min(560px, 100%); margin-top: 8px; }
+.picker .pick { display: grid; gap: 4px; padding: 18px 22px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); color: var(--text); text-align: left; text-decoration: none; transition: border-color .15s, transform .15s; }
+.picker .pick:hover { border-color: var(--brand); transform: translateY(-2px); text-decoration: none; }
+.picker .pick b { font-size: 20px; letter-spacing: -.02em; }
+.picker .pick span { color: var(--text-3); font-size: 14px; }
+.picker .pick-alt { margin-top: 10px; font-size: 14px; color: var(--text-3); }

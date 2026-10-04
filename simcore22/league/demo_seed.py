@@ -14,10 +14,11 @@ from __future__ import annotations
 import random
 import threading
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from simcore22.league import accounts, leagues, rounds
 from simcore22.league.db import Database
+from simcore22.league.errors import Conflict
 from simcore22.web import demo as demo_data
 
 DEMO_PASSWORD = "demo-password"
@@ -29,10 +30,15 @@ def player_email(name: str) -> str:
     return name.lower().replace(" ", ".") + "@demo.simcore22.test"
 
 
+# The demo players you can log in as. Tonight's round plays itself out for everyone EXCEPT these,
+# so whoever logs in as one of them enters their own holes without the demo writing over them.
+LOGIN_PLAYERS = [name for name, _, _ in demo_data.PLAYERS[:4]]
+
+
 def demo_accounts() -> Dict[str, object]:
     """What the demo log-in page offers (these are fictional accounts that exist only in the demo)."""
     return {"password": DEMO_PASSWORD, "admin": {"email": DEMO_ADMIN_EMAIL, "name": "Demo Manager"},
-            "players": [{"email": player_email(n), "name": n} for n, _, _ in demo_data.PLAYERS[:4]]}
+            "players": [{"email": player_email(n), "name": n} for n in LOGIN_PLAYERS]}
 
 
 class DemoVenue:
@@ -64,19 +70,30 @@ class DemoVenue:
 
         rng = random.Random(22)
         nights = [r for r in self.engine.rounds() if r.get("round_type") == "league" and r.get("round_status") in ("completed", "ended_early")]
-        for record in sorted(nights, key=lambda r: r["finished_at"]):
-            if rng.random() < 0.03:
+        # walk-in and practice rounds: most were typed in as casual rounds, some never were
+        casual = [r for r in self.engine.rounds() if r.get("round_type") != "league" and r.get("round_status") == "completed"]
+        everything = [(r, True) for r in nights] + [(r, False) for r in casual if rng.random() < 0.6]
+        for record, in_league in sorted(everything, key=lambda item: item[0]["finished_at"]):
+            if in_league and rng.random() < 0.03:
                 continue                                # nobody typed this one in
-            self._enter_past_round(conn, rng, record)
+            self._enter_past_round(conn, rng, record, in_league)
+
+        # the accounts were "created" before the first round they typed in
+        opened = (datetime.now().astimezone() - timedelta(days=60)).isoformat(timespec="seconds")
+        conn.execute("UPDATE users SET created_at = ?", (opened,))
+        conn.execute("UPDATE handicap_history SET effective_at = ? WHERE method = 'outdoor-start'", (opened,))
         for user_id in self._users.values():
             rounds.recompute_handicap(conn, user_id)
 
-    def _enter_past_round(self, conn, rng: random.Random, record: dict) -> None:
+    def _enter_past_round(self, conn, rng: random.Random, record: dict, in_league: bool) -> None:
         user_id = self._users[record["player"]]
         admin = {"id": self._admin["id"], "role": "admin"}
         pars = [h["par"] for h in record["hole_scores"]]
-        full_pars = demo_data.COURSES.get(record["course"], pars)
-        r = rounds.start(conn, admin, user_id=user_id, league_id=self._league_id, course_name=record["course"], pars=full_pars)
+        full_pars = demo_data.COURSES.get(record["course"], pars) if in_league else pars
+        if in_league:
+            r = rounds.start(conn, admin, user_id=user_id, league_id=self._league_id, course_name=record["course"], pars=full_pars)
+        else:
+            r = rounds.start(conn, admin, user_id=user_id, holes=len(full_pars), course_name=record["course"], pars=full_pars)
         for h in record["hole_scores"]:
             strokes = h["score_used"]
             if rng.random() < SLIP_RATE:
@@ -98,9 +115,14 @@ class DemoVenue:
             position = self.engine._position()
             changed = False
             for name, (_team, _hcp, scores, ends) in self.engine._tonight.items():
+                if name in LOGIN_PLAYERS:
+                    continue
                 target = sum(1 for end in ends if end <= position)
                 round_id = self._tonight.get(name)
-                have = conn.execute("SELECT COUNT(*) FROM hole_scores WHERE round_id = ?", (round_id,)).fetchone()[0] if round_id else 0
+                if round_id and conn.execute("SELECT 1 FROM rounds WHERE id = ?", (round_id,)).fetchone() is None:
+                    self._tonight.pop(name)             # an admin deleted it while trying the demo
+                    round_id = None
+                have =conn.execute("SELECT COUNT(*) FROM hole_scores WHERE round_id = ?", (round_id,)).fetchone()[0] if round_id else 0
                 if round_id and target < have:          # the demo night looped around
                     rounds.delete(conn, admin, round_id)
                     self._tonight.pop(name)
@@ -108,7 +130,10 @@ class DemoVenue:
                 if target == 0:
                     continue
                 if round_id is None:
-                    started = rounds.start(conn, admin, user_id=self._users[name], league_id=self._league_id)
+                    try:
+                        started = rounds.start(conn, admin, user_id=self._users[name], league_id=self._league_id)
+                    except Conflict:
+                        continue                        # someone trying the demo is playing as this player: leave their round alone
                     round_id = self._tonight[name] = started["id"]
                 for hole in range(have + 1, target + 1):
                     rounds.save_hole(conn, admin, round_id, hole, scores[hole - 1])
@@ -119,6 +144,3 @@ class DemoVenue:
     @property
     def league_id(self) -> int:
         return self._league_id
-
-    def engine_records(self) -> List[dict]:
-        return self.engine.rounds()

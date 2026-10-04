@@ -1,0 +1,114 @@
+/* The player app: hole-by-hole entry, home, league pages. Layout shell comes from admin.css. */
+
+/* --------------------------------------------------------------- round banner */
+.banner {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 16px 22px; padding: 20px 22px; border-radius: var(--radius);
+  border: 1px solid var(--line); background:
+    radial-gradient(500px 200px at 0% 0%, var(--brand-soft), transparent 70%), var(--surface);
+  box-shadow: var(--shadow);
+}
+.banner h2 { font-size: 18px; font-weight: 720; letter-spacing: -.02em; }
+.banner p { color: var(--text-2); font-size: 14px; margin-top: 2px; }
+.banner .grow { flex: 1; min-width: 200px; }
+
+/* ------------------------------------------------------------------ entry screen */
+.entry { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.entry-main { display: grid; gap: 16px; min-width: 0; }
+
+.hole-chips { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; }
+.hole-chip {
+  display: grid; justify-items: center; gap: 2px; padding: 7px 0 6px; border-radius: 11px; min-width: 0;
+  border: 1px solid var(--line-soft); background: var(--surface); color: var(--text-2);
+  font-variant-numeric: tabular-nums; transition: background .15s, border-color .15s;
+}
+.hole-chip small { font-size: 10.5px; font-weight: 650; letter-spacing: .06em; color: var(--text-3); }
+.hole-chip b { font: 750 17px/1.1 var(--font-display); color: var(--text); min-height: 19px; }
+.hole-chip:hover { background: var(--surface-2); }
+.hole-chip[aria-current="true"] { border-color: var(--brand); box-shadow: var(--ring); background: var(--brand-soft); }
+.hole-chip.under b { color: var(--under); }
+.hole-chip.over b { color: var(--over); }
+.hole-chip.done { background: var(--surface-2); }
+
+.hole-card { display: grid; gap: 22px; padding: 22px; justify-items: center; text-align: center; }
+.hole-title { display: flex; align-items: baseline; justify-content: center; gap: 14px; flex-wrap: wrap; }
+.hole-title h2 { font-size: 30px; font-weight: 780; letter-spacing: -.03em; }
+.hole-title .par { font-size: 17px; color: var(--text-2); font-weight: 600; }
+.hole-title .par select { height: 30px; margin-left: 4px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font-weight: 650; }
+.hole-title .recv { font-size: 13px; color: var(--brand-strong); font-weight: 650; }
+
+.stepper { display: flex; align-items: center; justify-content: center; gap: clamp(14px, 5vw, 36px); }
+.stepper .val { min-width: 2.1ch; font: 800 clamp(76px, 18vw, 112px)/1 var(--font-display); letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
+.stepper .val.under { color: var(--under); } .stepper .val.over { color: var(--over); }
+.step-btn {
+  display: grid; place-items: center; width: clamp(64px, 16vw, 84px); height: clamp(64px, 16vw, 84px); border-radius: 50%;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text); transition: transform .1s, background .15s;
+}
+.step-btn:hover { background: var(--surface-3); }
+.step-btn:active { transform: scale(.94); }
+.step-btn svg { width: 32px; height: 32px; }
+.value-label { margin-top: -12px; font-size: 15px; font-weight: 650; color: var(--text-2); min-height: 22px; }
+
+.quick { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.quick .chip { height: 38px; padding: 0 16px; }
+
+.entry-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; width: 100%; }
+.entry-actions .btn.primary { flex: 1 1 220px; max-width: 360px; }
+
+.totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.totals > div { padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line-soft); text-align: center; }
+.totals .label { font-size: 11.5px; color: var(--text-3); }
+.totals .value { margin-top: 3px; font: 740 22px/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
+
+.minirow { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 10px 18px; border-top: 1px solid var(--line-soft); }
+.minirow:first-child { border-top: 0; }
+.minirow .rk { font: 750 14px var(--font-display); color: var(--text-3); text-align: center; }
+.minirow .rk.first { color: var(--gold); }
+.minirow.me { background: var(--brand-soft); }
+.minirow .thru { font-size: 12.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+.done-card { display: grid; gap: 14px; justify-items: center; text-align: center; padding: 34px 22px; }
+.done-card .big { font: 800 64px/1 var(--font-display); letter-spacing: -.04em; }
+.done-card .ring { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--ok-soft); color: var(--ok); }
+.done-card .ring svg { width: 30px; height: 30px; }
+
+/* ------------------------------------------------------------------ handicap page */
+.index-hero { display: grid; gap: 6px; padding: 22px; }
+.index-hero .label { font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.index-hero .value { font: 800 64px/1 var(--font-display); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.index-hero .foot { color: var(--text-2); font-size: 13.5px; }
+.explain { display: grid; gap: 12px; padding: 4px 22px 22px; color: var(--text-2); font-size: 14px; }
+.explain b { color: var(--text); }
+.explain ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+
+.table tr.me td { background: var(--brand-soft); }
+.form-card { padding: 20px; display: grid; gap: 14px; max-width: 560px; }
+.form-ok { padding: 10px 14px; border-radius: 10px; font-size: 13.5px; font-weight: 550; color: var(--ok); background: var(--ok-soft); }
+
+/* ------------------------------------------------------------ bottom bar (phones) */
+.bottom-nav { display: none; }
+
+@media (max-width: 1180px) {
+  .entry { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .bottom-nav {
+    position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(5, 1fr);
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--bg-2) 92%, transparent);
+    backdrop-filter: blur(14px); border-top: 1px solid var(--line);
+  }
+  .bottom-nav a { display: grid; justify-items: center; gap: 2px; padding: 6px 0; border-radius: 10px; color: var(--text-3); font-size: 11px; font-weight: 650; text-decoration: none; }
+  .bottom-nav a svg { width: 22px; height: 22px; }
+  .bottom-nav a[aria-current="page"] { color: var(--brand-strong); background: var(--brand-soft); }
+  .content { padding-bottom: 96px; }
+  .hello h2 { font-size: 22px; }
+}
+@media (max-width: 560px) {
+  .totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hole-chips { grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; }
+  .hole-chip { padding: 6px 0 5px; border-radius: 9px; }
+  .hole-chip b { font-size: 15px; }
+  .hole-card { padding: 18px 12px; }
+}
+
+/* a toast must not hide behind the bottom bar */
+@media (max-width: 900px) { .toast { bottom: calc(84px + env(safe-area-inset-bottom)); } }

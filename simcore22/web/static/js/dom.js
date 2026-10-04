@@ -83,6 +83,7 @@ export function avatar(name, size = '') {
 }
 
 export const STATUS = {
+  in_progress: { label: 'Playing', tone: 'info' },
   completed: { label: 'Completed', tone: 'ok' },
   ended_early: { label: 'Ended early', tone: 'warn' },
   abandoned: { label: 'Abandoned', tone: 'muted' },
@@ -114,6 +115,17 @@ export const ICONS = {
   menu: icon('<path d="M4 7h16M4 12h16M4 17h16"/>'),
   arrowUp: icon('<path d="M12 19V5M6 11l6-6 6 6"/>'),
   arrowDown: icon('<path d="M12 5v14M6 13l6 6 6-6"/>'),
+  home: icon('<path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.8V20h13V9.8"/><path d="M10 20v-5.5h4V20"/>'),
+  flag: icon('<path d="M6 21V4"/><path d="M6 4.5h11l-2.2 3.8L17 12H6"/>'),
+  user: icon('<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c0-4 3.4-6.5 7.5-6.5s7.5 2.5 7.5 6.5"/>'),
+  logout: icon('<path d="M9 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H9"/><path d="M15 8l4 4-4 4M19 12H9"/>'),
+  plus: icon('<path d="M12 5v14M5 12h14"/>'),
+  minus: icon('<path d="M5 12h14"/>'),
+  target: icon('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/>'),
+  trend: icon('<path d="M3 17l6-6 4 4 7-8"/><path d="M15 7h5v5"/>'),
+  key: icon('<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>'),
+  edit: icon('<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>'),
+  leagues: icon('<path d="M4 20V10M9.5 20V4M15 20v-7M20.5 20V8"/>'),
 };
 
 export const LOGO = `<svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3BE3A4"/><stop offset="1" stop-color="#0FA37F"/></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#lg)"/><path d="M11.5 24.5V7.8l10 4.6-10 4.6" fill="none" stroke="#032A1E" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="21.2" cy="23.6" r="2.3" fill="#032A1E"/></svg>`;

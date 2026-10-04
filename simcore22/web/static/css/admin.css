@@ -7,10 +7,6 @@
   position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 6px;
   padding: 20px 14px 16px; background: var(--bg-2); border-right: 1px solid var(--line);
 }
-.brand { display: flex; align-items: center; gap: 11px; padding: 4px 10px 18px; font: 750 19px/1 var(--font-display); letter-spacing: -.02em; }
-.brand svg { width: 32px; height: 32px; flex: none; }
-.brand small { display: block; margin-top: 4px; font: 500 11px/1 var(--font); letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); }
-
 .nav { display: grid; gap: 3px; }
 .nav a {
   display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 12px; border-radius: 10px;
@@ -37,7 +33,6 @@
 
 .engine-chip { display: inline-flex; align-items: center; gap: 9px; height: 34px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-2); text-decoration: none; }
 .engine-chip:hover { background: var(--surface-2); text-decoration: none; }
-.badge.demo-flag { height: 28px; padding: 0 12px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); background: var(--gold-soft); box-shadow: inset 0 0 0 1px rgba(245, 196, 81, .35); }
 
 .content { padding: 26px 28px 56px; display: grid; gap: 20px; align-content: start; max-width: 1480px; width: 100%; margin: 0 auto; }
 
@@ -86,3 +81,34 @@
   .table th, .table td { padding: 11px 10px; }
   .top .engine-chip span.txt { display: none; }
 }
+
+/* ------------------------------------------------- shared by the admin portal and player app */
+.side-user { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.side-user .n { font-weight: 650; color: var(--text); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-user .s { font-size: 12px; color: var(--text-3); }
+.side-foot .btn { width: 100%; justify-content: flex-start; }
+
+.hello { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+.hello h2 { font-size: 26px; font-weight: 760; letter-spacing: -.03em; }
+.hello p { color: var(--text-2); margin-top: 2px; }
+
+
+/* ------------------------------------------------------- admin: leagues, players, capture */
+.code-box { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-radius: var(--radius); border: 1px dashed var(--line); background: var(--surface); }
+.code-box .label { font-size: 11.5px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.code-box .code { margin-top: 2px; font: 800 28px/1.1 ui-monospace, "Cascadia Code", Consolas, monospace; letter-spacing: .18em; }
+.code-inline { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; letter-spacing: .1em; font-size: 16px; }
+a.plain, a.plain:hover { color: inherit; text-decoration: none; }
+.input.slim, .select.slim { height: 34px; padding: 0 10px; font-size: 13.5px; border-radius: 9px; }
+.select.slim { padding-right: 30px; background-position: calc(100% - 15px) 14px, calc(100% - 10px) 14px; width: auto; }
+.edit-holes { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 10px; }
+.edit-hole { display: grid; gap: 4px; padding: 10px; border-radius: 12px; border: 1px solid var(--line-soft); background: var(--surface); }
+.edit-hole small { font-weight: 700; color: var(--text-3); letter-spacing: .06em; }
+.edit-hole .input { text-align: center; }
+.acc { display: flex; align-items: center; gap: 10px; }
+.acc .bar { flex: 1; }
+.acc .num { min-width: 42px; text-align: right; font-weight: 650; }
+.league-card .when { min-height: 1.4em; }
+.player-grid-wrap { min-width: 0; }
+
+@media (max-width: 480px) { .two { grid-template-columns: minmax(0, 1fr); } }

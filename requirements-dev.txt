@@ -3,3 +3,4 @@
 pytest   # python -m pytest
 ruff     # ruff check simcore22 tests
 httpx2   # test client for the web API
+# playwright  # optional, also needs Edge: tests/test_web_browser.py and simcore22.tools.ui_screenshots

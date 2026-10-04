@@ -1,9 +1,9 @@
 # SimCore22
 
-An all-in-one system for indoor golf venues: it reads rounds from GSPro and
-launch monitors, scores them automatically, keeps handicaps, and drives live
-leaderboards for leagues and tournaments. Windows, Python 3.12+ (developed on
-3.14).
+An all-in-one system for indoor golf venues: players log in and enter their rounds hole by
+hole (or, as it matures, have them read from GSPro and launch monitors automatically), and it
+keeps indoor handicaps, league standings and live leaderboards on every bay. Windows, Python
+3.12+ (developed on 3.14).
 
 > **Status: proof of concept.** Everything below is built and tested without
 > hardware. The first run on a real bay (Foresight Falcon / Hawk + GSPro) is
@@ -28,8 +28,11 @@ leaderboards for leagues and tournaments. Windows, Python 3.12+ (developed on
 | Live player and hole tracking from the HUD | needs calibration on a bay |
 | Live shot data (ball speed, carry, ...) | **not working yet** - needs real launch-monitor packets (`packet_capture`) |
 | Handicap updates | engine built; leagues (schedule, round numbers) not configurable yet |
-| Live leaderboard for bay screens + venue admin portal (web UI) | built, tested; works on demo data today and on real rounds as soon as there are some; **no login yet** |
-| Database, accounts / login, POS, bay & lesson scheduling | not started |
+| Live leaderboard for bay screens + venue admin portal (web UI) | built, tested; works on demo data today and on real rounds as soon as there are some |
+| Player accounts, log-in, hole-by-hole round entry by hand, indoor handicap, league tables, live board per league | built, tested in a real browser on demo data - **not yet tried at a real venue** |
+| Capture-accuracy check (screen capture vs what players typed in) | built, tested; becomes meaningful once capture runs on a real bay |
+| Outdoor GHIN number / index | collected at sign-up, **self-reported - not verified** (needs GHIN / USGA access) |
+| POS, bay & lesson scheduling, payments | not started |
 
 ## How it works
 
@@ -52,32 +55,96 @@ client, so the engine would take FSX's place. Turn the feed on only after
 `packet_capture` has found the launch monitor's real port
 (`SIMCORE_FEED_PORT`); the engine refuses port 921.
 
-## Web UI
+## Players, leagues and manual entry
 
-Two screens, served by a small local web app that only *reads* what the engine
-records (so the engine and the screens can run, crash and restart independently):
+Until screen capture is proven on a real bay, **players enter their own rounds, hole by
+hole**, and everything else builds on that: the live leaderboard, season standings, the
+indoor handicap and the admin tables all update the moment a hole is saved. When capture
+works it can run alongside - and every hand-entered round becomes an answer key for
+checking it.
+
+<p align="center">
+  <img src="docs/images/player-home.png" alt="Player home" width="49%">
+  <img src="docs/images/player-play-phone.png" alt="Entering a hole on a phone" width="22%">
+</p>
+
+- **Sign up / log in** (`/login`): name, email, password, and - optionally - the player's
+  **outdoor GHIN number and handicap index** plus their name in GSPro. The GHIN number and
+  index are **on the player's honour**: there is no GHIN check yet. The outdoor index gives a
+  new player a fair starting handicap until they have a few simulator rounds.
+- **Enter a round** (`/app`, built for phones): pick the league (or a casual 9 / 18), then
+  step through each hole - big +/- stepper, one-tap Eagle / Birdie / Par / Bogey / Double.
+  End a round early any time: what's entered is kept and counts toward the handicap from
+  9 holes. Players fix their own mistakes for a day; after that only an admin can.
+- **Indoor handicap, "SimCore Index v1"**: modelled on the World Handicap System - each round
+  becomes a differential (blow-up holes capped at net double bogey, scaled to 18 holes), the
+  index is the average of the best differentials of the last 20, and the outdoor index is
+  blended in until a player has three rounds. It is a simulator handicap, **not** an official
+  or GHIN handicap, and is rebuilt from the whole history whenever a round is corrected.
+- **Leagues**: an admin creates a league (course, pars, 9 / 18 holes, net or gross ranking);
+  players join with a six-character code. The league table ranks by average score to par;
+  net scores use each player's index at the start of the round.
+- **Bay screens** (`/live?league=ID`): each screen shows one league's board and remembers it.
+  `/live?source=capture` shows the screen-capture board instead.
+- **Is the capture right?** Admin -> *Capture accuracy* pairs every hand-entered round with the
+  round the engine read for the same player at about the same time, hole by hole: overall
+  accuracy, verified-vs-counted-from-shots, which holes differ, and rounds with no partner.
+  Set each player's "Name in GSPro" so the two can be matched.
+
+Accounts live in `data/simcore22.db` (SQLite - one file, easy to back up; git-ignored).
+Passwords are hashed with scrypt, sessions use an HttpOnly cookie, log-ins are throttled,
+every state-changing request needs an anti-forgery header, and admin actions are logged.
+There is no email, so a forgotten password is reset by the front desk (admin page, or
+`python -m simcore22.league reset-password --email ...`). The first admin is created from
+the venue PC itself (`/admin` asks on first visit) or with
+`python -m simcore22.league create-admin --email ... --name ...`.
+
+> **Before real players use this over a network:** the server speaks plain http. Keep it on the
+> venue network, and put https in front of it (a reverse proxy or tunnel) before exposing it
+> further. Player emails and GHIN numbers are personal data.
+
+## Web UI
 
 <p align="center">
   <img src="docs/images/admin-overview.png" alt="Admin overview" width="49%">
-  <img src="docs/images/admin-round.png" alt="A round with its verified scorecard" width="49%">
+  <img src="docs/images/admin-league.png" alt="A league: standings, live board, players" width="49%">
+</p>
+<p align="center">
+  <img src="docs/images/admin-capture.png" alt="Capture accuracy" width="49%">
+  <img src="docs/images/admin-round.png" alt="Correcting a hand-entered round" width="49%">
 </p>
 
 | Screen | Where | What it's for |
 |---|---|---|
-| **Live leaderboard** | `/live` | Put it on every bay TV: big type, glides when someone moves up, flashes on a new score, pages through long fields, works on a phone. Press `F` for full screen |
-| **Admin portal** | `/admin` | **Overview** (rounds, active players, average to par, % verified by GSPro, scoring mix), **Rounds** (filter, search, full hole-by-hole scorecard with birdie / bogey marks, where the scores came from, the GSPro screenshot), **Players** (profiles, handicap, trend), **System** (is the engine running, can it see GSPro, with the fix when it can't). Light and dark themes |
+| **Player app** | `/app` | Home, enter a round, rounds and scorecards, league tables, handicap and how it works, profile. Phone first, desktop too |
+| **Live leaderboard** | `/live` | Put it on every bay TV: big type, glides when someone moves up, flashes on a new score, pages through long fields. Press `F` for full screen. No login - it is what the screens show |
+| **Admin portal** | `/admin` | **Overview**, **Leagues** (create, join code, standings, live board, members and teams, every round - click to correct a score), **Players** (accounts, handicaps, reset password, roles, disable), **Capture accuracy**, **Captured rounds** (what the engine read from GSPro, with the scorecard screenshot), **System** (is the engine running, can it see GSPro, with the fix when it can't). Light and dark themes |
 | **API** | `/docs` | Every number the screens show, as JSON with interactive documentation |
 
 ```bash
-python -m simcore22.web            # your real rounds
-python -m simcore22.web --demo     # the fictional demo league (every screen is labelled DEMO)
+python -m simcore22.web            # your venue
+python -m simcore22.web --demo     # a fictional venue with accounts, history and a live night (everything labelled DEMO)
 ```
 
 `run_ui.bat` / `run_demo.bat` do the same with a double-click, and `run_bay.bat`
-starts the UI together with the engine. Set `SIMCORE_LEAGUE_NAME` (an environment
-variable) to title the live board with your league; unset, it just says "Live Leaderboard". It listens on this PC only by default;
-for screens on other PCs use `--host 0.0.0.0` - **there is no login yet**, so use a
-trusted venue network. Nothing is loaded from the internet, so it works offline.
+starts the UI together with the engine. The demo's log-in page has one-click buttons for the
+fictional manager and players; nothing in the demo is saved. Set `SIMCORE_LEAGUE_NAME` to
+title the *screen-capture* board. It listens on this PC only by default; for phones and
+screens on other PCs use `--host 0.0.0.0` (see the note above about https). Nothing is loaded
+from the internet, so it works offline.
+
+## Where does GSPro's own round data go?
+
+Honest answer, from the public material found so far: GSPro shows the scorecard and keeps the
+round in memory while you play, but there is **no documented export of scored rounds** (its CSV
+export covers practice-range sessions; online tournament rounds go to the SimGolf Tour cloud),
+and its Open Connect interface carries shots *into* GSPro, not scores out. One competitor
+(RoundBoss) ships a Windows "bridge" that streams hole scores from GSPro - unofficial, how it
+works isn't published, and it can break when GSPro updates. So today the choices are:
+screen capture (what this project does), hand entry (above), or **asking GSPro for a data /
+partner API** - which a working product with real league data makes much easier to ask for.
+Worth checking on a bay: whether GSPro writes any round or log files under its install folder,
+Documents or AppData.
 
 ## Set up a bay PC (once)
 
@@ -141,7 +208,9 @@ Run from the project folder, e.g. `.venv\Scripts\python -m simcore22.tools.bay_c
 
 | Tool | What it's for |
 |---|---|
-| `simcore22.web` | The web UI: live leaderboard, admin portal, API (see above). `--demo` for the fictional league |
+| `simcore22.web` | The web UI: player app, live leaderboard, admin portal, API (see above). `--demo` for the fictional venue |
+| `simcore22.league` | Account tasks from the command line: `create-admin`, `reset-password`, `list-users` |
+| `simcore22.tools.ui_screenshots` | Regenerate `docs/images/` from the demo (needs Playwright + Edge, dev only) |
 | `simcore22.tools.bay_check` | What's running, what the capture sees, a verdict. Saves `captures/<time>/` (screenshots, `report.json`) - send that folder back when something looks wrong |
 | `simcore22.tools.packet_capture` | Record what a launch monitor / simulator really sends (hex dump file) so it can be decoded |
 | `simcore22.tools.capture_screenshot` | Save one frame of the GSPro picture |
@@ -162,8 +231,11 @@ Run from the project folder, e.g. `.venv\Scripts\python -m simcore22.tools.bay_c
 - `simcore22/engine/ingestion/` - event bus; Foresight and TrackMan parsers (placeholders)
 - `simcore22/engine/{leaderboard,analyzer,handicap,scheduling,models,admin}/` - scoring
 - `simcore22/engine/round_log.py`, `state_writer.py` - the permanent log, the live JSON
-- `simcore22/web/` - the web UI: `app.py` (API + pages), `data.py` (round log -> what the screens
-  show), `demo.py` (fictional league), `static/` (HTML / CSS / JS, no build step)
+- `simcore22/league/` - accounts, hand-entered rounds, the indoor handicap, standings, the
+  capture-accuracy check (SQLite; `demo_seed.py` builds the fictional venue)
+- `simcore22/web/` - the web UI: `app.py` (pages, live stream, wiring), `league_api.py` (accounts /
+  leagues / rounds API), `auth.py` (cookies, anti-forgery), `data.py` (engine round log -> what the
+  screens show), `demo.py` (fictional capture data), `static/` (HTML / CSS / JS, no build step)
 - `simcore22/tools/`, `simcore22/ui/` - diagnostics and console viewers
 - `examples/` - sample output files
 - `tests/` - `python -m pytest`

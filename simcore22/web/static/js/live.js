@@ -1,8 +1,16 @@
 // The live leaderboard (bay TVs). Receives pushed updates, keeps one element per player and
 // moves it with a CSS transform, so a player climbing the board visibly glides past the others.
+//
+// Which board a screen shows:
+//   /live?league=3        that league's board, built from the scores players enter hole by hole
+//   /live?source=capture  the board the screen-capture engine publishes
+//   /live                 the venue's only league if it has one, a picker if it has several,
+//                         otherwise the capture board. A screen remembers its choice.
 
 import { h, clear, LOGO, toPar, parClass, avatar, timeAgo } from './dom.js';
 import { get, subscribe } from './api.js';
+
+const REMEMBER_KEY = 'sc22.live.league';
 
 const PAGE_SECONDS = 12;        // when there are more players than fit, show pages in turn
 const MOVE_BADGE_MS = 9000;     // how long a "▲2" stays next to a rank
@@ -16,6 +24,7 @@ const state = {
   ranks: new Map(),           // player name -> rank at the previous update
   page: 0, pageSize: 8, pages: 1, pageStarted: Date.now(),
   receivedAt: null, recent: null, recentAt: 0,
+  league: null,               // the league id this screen follows (null = the screen-capture board)
 };
 
 // -------------------------------------------------------------------- skeleton
@@ -23,6 +32,7 @@ const state = {
 const el = {};
 function build() {
   el.clock = h('div', { class: 'clock num' });
+  el.parHead = h('span', { class: 'c-num' }, 'To par');
   el.status = h('span', { class: 'pill off' }, h('i', { class: 'dot' }), h('span', {}, 'Connecting'));
   el.demo = h('span', { class: 'pill demo', hidden: true }, 'Demo data');
   el.title = h('h1', {}, 'Live Leaderboard');
@@ -36,7 +46,7 @@ function build() {
   el.board = h('section', { class: 'board', 'aria-label': 'Leaderboard' },
     h('div', { class: 'board-head' },
       h('span', {}, 'Pos'), h('span', {}, 'Player'), h('span', { class: 'c-thru' }, 'Thru'),
-      h('span', { class: 'c-num' }, 'To par'), h('span', { class: 'c-num head-gross' }, 'Gross'),
+      el.parHead, h('span', { class: 'c-num head-gross' }, 'Gross'),
       h('span', { class: 'c-num col-net head-net' }, 'Net')),
     el.rows, el.empty, el.pager);
 
@@ -181,6 +191,7 @@ function applyBoard(board) {
   const players = board.players || [];
 
   el.title.textContent = board.league_name || 'Live Leaderboard';
+  el.parHead.textContent = board.ranking === 'net' ? 'Net to par' : 'To par';
   const subtitle = [board.week ? `Week ${board.week}` : null, board.course_name && board.course_name !== 'Unknown' ? board.course_name : null, board.format]
     .filter(Boolean).join(' · ');
   el.sub.textContent = subtitle;
@@ -221,14 +232,14 @@ async function showEmpty(isEmpty) {
 
   if (!state.recent || Date.now() - state.recentAt > 30000) {
     state.recentAt = Date.now();
-    try { state.recent = (await get('/api/rounds', { limit: 6, status: 'completed' })).rounds; }
-    catch { state.recent = []; }
+    try { state.recent = state.league ? [] : (await get('/api/rounds', { limit: 6, status: 'completed' })).rounds; }
+    catch { state.recent = []; }   // the recent-rounds list needs an admin log-in; a bay screen simply goes without
   }
   const recent = state.recent || [];
   el.empty.replaceChildren(...[
     h('div', { class: 'ball' }),
     h('h2', {}, 'Waiting for the next round'),
-    h('p', {}, 'Scores appear here the moment a player takes their first shot.'),
+    h('p', {}, state.league ? 'Scores appear here as soon as a player enters their first hole.' : 'Scores appear here the moment a player takes their first shot.'),
     recent.length ? h('div', { class: 'recent' },
       h('h3', {}, 'Recent rounds'),
       recent.map((r) => h('div', { class: 'recent-row' },
@@ -278,11 +289,45 @@ function setupKiosk() {
 
 // ------------------------------------------------------------------------ start
 
-build();
-setupKiosk();
-tick();
-setInterval(tick, 1000);
-subscribe(
-  ({ leaderboard, engine }) => { state.engine = engine; applyBoard(leaderboard); },
-  (conn) => { state.conn = conn; refreshStatus(); },
-);
+function remembered() { try { return localStorage.getItem(REMEMBER_KEY); } catch { return null; } }
+function remember(id) { try { if (id) localStorage.setItem(REMEMBER_KEY, id); else localStorage.removeItem(REMEMBER_KEY); } catch { /* not remembered */ } }
+
+/** Several leagues and no choice yet: ask once, on the screen itself. */
+function showPicker(leagues) {
+  clear(app).append(h('div', { class: 'picker' },
+    h('div', { class: 'brand' }, h('span', { html: LOGO }), h('div', {}, 'SimCore22', h('span', { class: 'by' }, 'Live scoring'))),
+    h('h1', {}, 'Which league is this screen for?'),
+    h('p', {}, 'It will remember. Change it any time with ?league= in the address.'),
+    h('div', { class: 'picks' }, leagues.map((l) => h('a', { class: 'pick', href: `/live?league=${l.id}` },
+      h('b', {}, l.name), h('span', {}, [l.season, l.course_name, `${l.holes} holes`].filter(Boolean).join(' · '))))),
+    h('a', { class: 'pick-alt', href: '/live?source=capture' }, 'Show the screen-capture board instead')));
+}
+
+async function chooseSource() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('source') === 'capture') { remember(null); return null; }
+  let leagues = [];
+  try { leagues = (await get('/api/leagues/public')).leagues; } catch { /* fall back to the capture board */ }
+  const exists = (id) => leagues.some((l) => String(l.id) === String(id));   // a league that has ended is forgotten
+  const asked = params.get('league');
+  if (asked && exists(asked)) { remember(asked); return asked; }
+  if (remembered() && exists(remembered())) return remembered();
+  if (leagues.length === 1) return String(leagues[0].id);
+  if (leagues.length > 1) { showPicker(leagues); return undefined; }
+  return null;
+}
+
+(async function start() {
+  const league = await chooseSource();
+  if (league === undefined) return;          // the picker is showing
+  state.league = league;
+  build();
+  setupKiosk();
+  tick();
+  setInterval(tick, 1000);
+  subscribe(
+    ({ leaderboard, engine }) => { state.engine = engine; applyBoard(leaderboard); },
+    (conn) => { state.conn = conn; refreshStatus(); },
+    { league },
+  );
+}());

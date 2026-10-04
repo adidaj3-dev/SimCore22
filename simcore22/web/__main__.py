@@ -6,8 +6,9 @@ Start the web UI.
     python -m simcore22.web --demo       # a fictional league, for showing the product
     python -m simcore22.web --open       # also open the admin portal in your browser
 
-    live leaderboard:  http://localhost:8080/live
-    admin portal:      http://localhost:8080/admin
+    player app:        http://localhost:8080/app      (players sign up and log in here)
+    live leaderboard:  http://localhost:8080/live     (the bay screens)
+    admin portal:      http://localhost:8080/admin    (the first visit asks you to create the admin account)
     API reference:     http://localhost:8080/docs
 
 If port 8080 is busy (another program on the bay PC) the next free one is used and printed.
@@ -44,7 +45,7 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--host", default="127.0.0.1",
                         help="address to listen on (default: this PC only; 0.0.0.0 = the whole network)")
     parser.add_argument("--port", type=int, help=f"port to use (default {DEFAULT_PORT}, or the next free one)")
-    parser.add_argument("--open", action="store_true", help="open the admin portal in a browser")
+    parser.add_argument("--open", action="store_true", help="open the web UI in a browser")
     args = parser.parse_args(argv)
 
     setup_logging()
@@ -58,16 +59,19 @@ def main(argv: Optional[list] = None) -> int:
 
     base = f"http://{'localhost' if args.host in ('127.0.0.1', '0.0.0.0') else args.host}:{port}"
     print(f"\n  SimCore22 {'DEMO ' if args.demo else ''}web UI")
+    print(f"    player app        {base}/app")
     print(f"    live leaderboard  {base}/live")
     print(f"    admin portal      {base}/admin")
     print(f"    API reference     {base}/docs")
+    if args.demo:
+        print("\n  Demo accounts are on the log-in page (password: demo-password). Nothing here is saved.")
     if args.host not in ("127.0.0.1", "localhost"):
-        print("\n  NOTE: there is no login yet - anyone on this network can open these pages "
-              "and see player names and scores. Use a trusted venue network only.")
+        print("\n  NOTE: this is reachable from the network. Players and admins log in, but the connection is not "
+              "encrypted (http). Use a trusted venue network, and put https in front of it before exposing it beyond that.")
     print()
 
     if args.open:
-        threading.Timer(1.2, lambda: webbrowser.open(f"{base}/admin")).start()
+        threading.Timer(1.2, lambda: webbrowser.open(f"{base}/app")).start()
 
     try:
         uvicorn.run(create_app(demo=args.demo), host=args.host, port=port, log_level="warning")

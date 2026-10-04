@@ -244,6 +244,22 @@ def test_stale_rounds_are_closed(conn):
     assert rounds.get_row(conn, r["id"])["status"] == "ended_early"
 
 
+def test_command_line_can_create_an_admin_and_reset_a_password(tmp_path, monkeypatch, capsys):
+    from simcore22.league.__main__ import main
+    db_file = tmp_path / "x.db"
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": "a long enough password")
+    assert main(["--db", str(db_file), "create-admin", "--email", "boss@example.com", "--name", "Venue Boss"]) == 0
+    assert main(["--db", str(db_file), "create-admin", "--email", "boss@example.com", "--name", "Again"]) == 1      # duplicate
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": "a different password")
+    assert main(["--db", str(db_file), "reset-password", "--email", "boss@example.com"]) == 0
+    assert main(["--db", str(db_file), "reset-password", "--email", "nobody@example.com"]) == 1
+    capsys.readouterr()
+    assert main(["--db", str(db_file), "list-users"]) == 0
+    assert "boss@example.com" in capsys.readouterr().out
+    with Database(db_file).connect() as c:
+        accounts.login(c, "boss@example.com", "a different password")
+
+
 # --------------------------------------------------------------- leagues / board
 
 def setup_league(conn, ranking="net"):

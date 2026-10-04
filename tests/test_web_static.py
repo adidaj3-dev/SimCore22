@@ -22,7 +22,7 @@ def client():
 
 # ------------------------------------------------------------------ pages / assets
 
-@pytest.mark.parametrize("path", ["/live", "/admin"])
+@pytest.mark.parametrize("path", ["/live", "/admin", "/app", "/login"])
 def test_pages_are_served_as_html_and_revalidate(client, path):
     response = client.get(path)
     assert response.status_code == 200 and response.headers["content-type"].startswith("text/html")
@@ -35,7 +35,7 @@ def test_root_goes_to_the_player_app(client):
     assert response.status_code in (302, 307) and response.headers["location"] == "/app"
 
 
-@pytest.mark.parametrize("page", ["live.html", "admin.html"])
+@pytest.mark.parametrize("page", ["live.html", "admin.html", "app.html", "login.html"])
 def test_every_asset_a_page_references_exists_and_is_served(client, page):
     html = (STATIC_DIR / page).read_text(encoding="utf-8")
     assets = re.findall(r'(?:href|src)="(/static/[^"]+)"', html)
@@ -137,12 +137,13 @@ def test_no_external_resources_so_a_bay_works_offline():
 
 def test_scripts_use_only_the_public_api_paths_that_exist(client):
     """Every /api/... path written in the JS must be a real endpoint."""
-    paths = set()
+    used = set()
     for file in JS_DIR.glob("*.js"):
-        paths |= set(re.findall(r"""['"`](/api/[\w/]+)""", file.read_text(encoding="utf-8")))
-    known = {route.path.split("{")[0].rstrip("/") for route in client.app.routes}
-    for path in paths:
-        assert path.rstrip("/") in known, f"JS calls {path}, which the server doesn't define"
+        for literal in re.findall(r"""['"`](/api/[^'"`]+)['"`]""", file.read_text(encoding="utf-8")):
+            used.add(re.sub(r"\$\{[^}]*\}", "X", literal.split("?")[0]).rstrip("/"))
+    routes = [re.compile("^" + re.sub(r"\{[^}]+\}", "[^/]+", path).rstrip("/") + "$") for path in client.get("/openapi.json").json()["paths"]]
+    for path in sorted(used):
+        assert any(route.match(path) for route in routes), f"JS calls {path}, which the server doesn't define"
 
 
 def test_demo_flag_exists_on_everything_the_ui_uses_to_label_demo_data(client):

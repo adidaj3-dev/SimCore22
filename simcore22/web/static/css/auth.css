@@ -1,0 +1,39 @@
+/* Log-in / sign-up page. (Form controls live in components.css.) */
+
+.auth { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); min-height: 100vh; }
+.auth-side {
+  position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 40px;
+  padding: 36px 48px; overflow: hidden;
+  background:
+    radial-gradient(900px 500px at 10% -10%, rgba(52, 211, 153, .22), transparent 60%),
+    radial-gradient(700px 500px at 110% 110%, rgba(98, 168, 255, .18), transparent 60%),
+    var(--bg-2);
+  border-right: 1px solid var(--line);
+}
+.auth-side .brand { padding: 0; }
+.pitch h2 { font-size: clamp(28px, 3.2vw, 42px); line-height: 1.1; font-weight: 780; letter-spacing: -.03em; max-width: 14ch; }
+.pitch ul { margin: 26px 0 0; padding: 0; list-style: none; display: grid; gap: 14px; max-width: 44ch; color: var(--text-2); }
+.pitch li { position: relative; padding-left: 28px; }
+.pitch li::before { content: ""; position: absolute; left: 0; top: .45em; width: 14px; height: 14px; border-radius: 50%; background: var(--brand-grad); box-shadow: 0 0 0 4px var(--brand-soft); }
+
+.auth-main { display: flex; flex-direction: column; min-width: 0; padding: 20px 28px 40px; }
+.auth-top { display: flex; justify-content: flex-end; }
+.auth-body { width: min(440px, 100%); margin: auto; display: grid; gap: 16px; padding: 12px 0; }
+.auth-body h1 { font-size: 30px; font-weight: 760; letter-spacing: -.03em; }
+.auth-body .lede { color: var(--text-2); margin-top: -8px; }
+
+.seg { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line-soft); }
+.seg button { height: 36px; border: 0; border-radius: 9px; background: transparent; color: var(--text-2); font-weight: 650; font-size: 14px; }
+.seg button[aria-selected="true"] { background: var(--surface-3); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+
+.demo-panel { display: grid; gap: 10px; padding: 16px; margin-top: 6px; border-radius: var(--radius); border: 1px dashed var(--line); background: var(--surface); }
+.demo-head { display: flex; align-items: center; gap: 10px; }
+.demo-panel p { font-size: 13.5px; color: var(--text-2); }
+.demo-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+
+@media (max-width: 900px) {
+  .auth { grid-template-columns: minmax(0, 1fr); }
+  .auth-side { display: none; }
+  .auth-main { padding: 14px 18px 32px; }
+}
+@media (max-width: 480px) { .two { grid-template-columns: minmax(0, 1fr); } }
