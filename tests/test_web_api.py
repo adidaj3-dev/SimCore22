@@ -9,13 +9,13 @@ from datetime import datetime, timedelta
 
 import cv2
 import pytest
-from fastapi.testclient import TestClient
 
 from simcore22.engine import state_writer
 from simcore22.engine.engine_loop import EngineRuntime
 from simcore22.engine.ocr.tesseract_setup import find_tesseract
 from simcore22.web.app import DemoSource, FileSource, create_app, event_stream
 from simcore22.web.demo import DemoLeague
+from web_helpers import admin_client
 
 
 BASE = 1_790_000_000.0  # a realistic date: Windows can't convert 1970-era timestamps to local time
@@ -33,7 +33,7 @@ def client(sandbox):
         engine_status_path=sandbox / "state" / "engine_status.json",
         scorecards_dir=sandbox / "data" / "scorecards",
     )
-    return TestClient(app)
+    return admin_client(app)
 
 
 # ---------------------------------------------- real engine -> API (contract)
@@ -185,7 +185,7 @@ def test_the_saved_scorecard_screenshot_is_served_and_nothing_else_is(client, sa
 # --------------------------------------------------------------------- demo
 
 def test_demo_mode_is_labelled_everywhere():
-    demo = TestClient(create_app(demo=True))
+    demo = admin_client(create_app(demo=True))
     assert demo.get("/api/health").json()["mode"] == "demo"
     assert demo.get("/api/leaderboard").json()["demo"] is True
     assert demo.get("/api/engine").json()["demo"] is True
@@ -194,7 +194,7 @@ def test_demo_mode_is_labelled_everywhere():
 
 
 def test_the_demo_league_has_history_players_and_a_live_board():
-    demo = TestClient(create_app(demo=True))
+    demo = admin_client(create_app(demo=True))
     assert demo.get("/api/rounds").json()["total"] > 100
     assert len(demo.get("/api/players").json()["players"]) == 16
     board = demo.get("/api/leaderboard").json()
@@ -230,7 +230,7 @@ def test_the_demo_board_plays_itself_out_and_then_starts_over():
 
 def test_demo_data_never_touches_real_files(sandbox):
     DemoSource().rounds()
-    TestClient(create_app(demo=True)).get("/api/rounds")
+    admin_client(create_app(demo=True)).get("/api/rounds")
     assert not (sandbox / "data").exists() and not (sandbox / "state").exists()
 
 
@@ -290,7 +290,7 @@ def test_an_unchanged_state_is_not_resent():
 
 
 def test_the_stream_endpoint_serves_server_sent_events():
-    demo = TestClient(create_app(demo=True))
+    demo = admin_client(create_app(demo=True))
     response = demo.get("/api/stream?max_events=1")
     assert response.status_code == 200 and response.headers["content-type"].startswith("text/event-stream")
     assert response.text.startswith("event: update")

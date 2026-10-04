@@ -88,6 +88,46 @@ def league_table(conn, league_id: int) -> Dict[str, Any]:
     return {"league": leagues.view(conn, league), "ranking": ranking, "players": out}
 
 
+def venue_overview(conn, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Headline numbers for the admin overview, from the hand-entered rounds."""
+    now = now or datetime.now().astimezone()
+
+    def started(row) -> datetime:
+        return datetime.fromisoformat(row["started_at"])
+
+    rows = conn.execute("SELECT * FROM rounds WHERE status != 'abandoned' ORDER BY started_at").fetchall()
+    real = [r for r in rows if conn.execute("SELECT 1 FROM hole_scores WHERE round_id = ? LIMIT 1", (r["id"],)).fetchone()]
+    last7 = [r for r in real if started(r) >= now - timedelta(days=7)]
+    prev7 = [r for r in real if now - timedelta(days=14) <= started(r) < now - timedelta(days=7)]
+
+    to_par = []
+    for r in real:
+        if r["status"] == "completed" and started(r) >= now - timedelta(days=30):
+            s = conn.execute("SELECT SUM(strokes) - SUM(par) FROM hole_scores WHERE round_id = ?", (r["id"],)).fetchone()[0]
+            to_par.append(s)
+
+    mix = dict.fromkeys(("eagle_or_better", "birdie", "par", "bogey", "double_or_worse"), 0)
+    since = (now - timedelta(days=30)).isoformat(timespec="seconds")
+    for h in conn.execute("SELECT h.strokes - h.par AS d FROM hole_scores h JOIN rounds r ON r.id = h.round_id WHERE r.started_at >= ?", (since,)):
+        d = h["d"]
+        mix["eagle_or_better" if d <= -2 else {-1: "birdie", 0: "par", 1: "bogey"}.get(d, "double_or_worse")] += 1
+
+    by_day = []
+    for offset in range(13, -1, -1):
+        day = (now - timedelta(days=offset)).date()
+        by_day.append({"date": day.isoformat(), "rounds": sum(1 for r in real if started(r).astimezone().date() == day)})
+
+    return {
+        "total_rounds": len(real), "rounds_7d": len(last7), "rounds_prev_7d": len(prev7),
+        "players": conn.execute("SELECT COUNT(*) FROM users WHERE role = 'player' AND disabled = 0").fetchone()[0],
+        "players_7d": len({r["user_id"] for r in last7}),
+        "leagues": conn.execute("SELECT COUNT(*) FROM leagues WHERE archived = 0").fetchone()[0],
+        "playing_now": conn.execute("SELECT COUNT(*) FROM rounds WHERE status = 'in_progress'").fetchone()[0],
+        "avg_vs_par_30d": round(mean(to_par), 1) if to_par else None,
+        "rounds_by_day": by_day, "scoring_mix": mix,
+    }
+
+
 def player_profile(conn, user_id: int) -> Dict[str, Any]:
     from simcore22.league import accounts
     user = accounts.get_user(conn, user_id)

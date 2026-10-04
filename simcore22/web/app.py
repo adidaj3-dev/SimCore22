@@ -7,8 +7,10 @@ scorecard screenshots) - it never talks to the engine directly, so the engine an
 the UI can run, crash and restart independently. `demo=True` swaps those files for
 the built-in fictional league (see demo.py).
 
-There is no login yet. By default it listens on this PC only (127.0.0.1); put it on
-the network (--host 0.0.0.0) only on a trusted venue network until accounts exist.
+Players and admins log in (accounts live in data/simcore22.db, see league/). The live
+leaderboard pages stay open on purpose: they are what the bay TVs show. By default the server
+listens on this PC only (127.0.0.1); to let phones and bay screens reach it use
+--host 0.0.0.0 on a trusted venue network, and put it behind https before exposing it further.
 """
 from __future__ import annotations
 
@@ -16,18 +18,24 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional, Protocol, Tuple
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from simcore22 import __version__
 from simcore22.engine import round_log, state_writer
-from simcore22.web import data
+from simcore22.league import standings
+from simcore22.league.db import Database
+from simcore22.league.demo_seed import DemoVenue
+from simcore22.league.errors import LeagueError
+from simcore22.web import auth, data
 from simcore22.web.demo import DemoLeague
+from simcore22.web.league_api import build_router
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +154,35 @@ def _board_view(board: Dict[str, Any]) -> Dict[str, Any]:
     return {**board, "players": data.rank_players(board.get("players") or [])}
 
 
+class LeagueSource:
+    """One league's live board, built from the hand-entered rounds, shaped like a `Source` so the
+    same event stream serves it. The engine status still comes from the real source."""
+
+    def __init__(self, app: FastAPI, league_id: int):
+        self.app, self.league_id = app, league_id
+        self.mode = app.state.source.mode
+
+    def _sync(self) -> None:
+        if self.app.state.demo_venue is not None:
+            self.app.state.demo_venue.sync()
+
+    def leaderboard(self) -> Dict[str, Any]:
+        self._sync()
+        with self.app.state.db.connect() as conn:
+            board = standings.live_board(conn, self.league_id)
+        if self.app.state.demo_venue is not None:
+            board["demo"] = True
+        return board
+
+    def engine_status(self) -> Optional[Dict[str, Any]]:
+        return self.app.state.source.engine_status()
+
+    def signature(self) -> Tuple:
+        self._sync()
+        # the data revision, plus the minute so rounds age out of "tonight" on their own
+        return (self.app.state.db.revision(), int(time.time() // 60))
+
+
 async def event_stream(source: Source, interval: float = 0.5, max_events: Optional[int] = None) -> AsyncIterator[str]:
     """
     Server-sent events: send the current state immediately, then again whenever the
@@ -175,23 +212,45 @@ async def event_stream(source: Source, interval: float = 0.5, max_events: Option
 
 def create_app(*, demo: bool = False, source: Optional[Source] = None, rounds_path: Optional[Path] = None,
                leaderboard_path: Optional[Path] = None, engine_status_path: Optional[Path] = None,
-               scorecards_dir: Optional[Path] = None) -> FastAPI:
+               scorecards_dir: Optional[Path] = None, db: Optional[Database] = None,
+               local_hosts: frozenset = auth.LOOPBACK) -> FastAPI:
+    """`db` is the accounts/rounds database (default: data/simcore22.db, or a throwaway one in demo mode).
+    `local_hosts` are the client addresses allowed to do first-time admin setup."""
+    demo_venue: Optional[DemoVenue] = None
     if source is None:
-        source = DemoSource() if demo else FileSource(
-            rounds_path or round_log.DEFAULT_PATH,
-            leaderboard_path or state_writer.LEADERBOARD_FILE,
-            engine_status_path or state_writer.ENGINE_STATUS_FILE,
-            scorecards_dir or Path(round_log.DEFAULT_PATH).parent / "scorecards",
-        )
+        if demo:
+            source = DemoSource()
+        else:
+            source = FileSource(
+                rounds_path or round_log.DEFAULT_PATH,
+                leaderboard_path or state_writer.LEADERBOARD_FILE,
+                engine_status_path or state_writer.ENGINE_STATUS_FILE,
+                scorecards_dir or Path(round_log.DEFAULT_PATH).parent / "scorecards",
+            )
+    if isinstance(source, DemoSource):
+        demo_venue = DemoVenue(source.league)
+        db = demo_venue.db
+    elif db is None:
+        db = Database(Path(rounds_path or round_log.DEFAULT_PATH).parent / "simcore22.db")
 
-    app = FastAPI(title="SimCore22", version=__version__, description="Live leaderboard and venue admin API")
+    app = FastAPI(title="SimCore22", version=__version__, description="Live leaderboard, player accounts and venue admin API")
     app.state.source = source
+    app.state.db = db
+    app.state.demo_venue = demo_venue
+    app.state.local_hosts = local_hosts
+    app.include_router(build_router())
+
+    @app.exception_handler(LeagueError)
+    async def league_error(_request: Request, exc: LeagueError):
+        return JSONResponse({"detail": exc.message}, status_code=exc.status)
+
+    admin_only = [Depends(auth.require_admin)]
 
     # ---------------------------------------------------------------- pages
 
     @app.get("/", include_in_schema=False)
     def root():
-        return RedirectResponse("/admin")
+        return RedirectResponse("/app")
 
     @app.get("/live", include_in_schema=False)
     def live_page():
@@ -200,6 +259,14 @@ def create_app(*, demo: bool = False, source: Optional[Source] = None, rounds_pa
     @app.get("/admin", include_in_schema=False)
     def admin_page():
         return FileResponse(STATIC_DIR / "admin.html", headers=NO_CACHE)
+
+    @app.get("/app", include_in_schema=False)
+    def player_page():
+        return FileResponse(STATIC_DIR / "app.html", headers=NO_CACHE)
+
+    @app.get("/login", include_in_schema=False)
+    def login_page():
+        return FileResponse(STATIC_DIR / "login.html", headers=NO_CACHE)
 
     # ------------------------------------------------------------------ API
 
@@ -218,20 +285,29 @@ def create_app(*, demo: bool = False, source: Optional[Source] = None, rounds_pa
         return {**_board_view(source.leaderboard()), "mode": source.mode}
 
     @app.get("/api/stream", tags=["live"])
-    async def stream(max_events: Optional[int] = Query(None, ge=1, le=1000, description="stop after N events (diagnostics)")):
+    async def stream(
+        max_events: Optional[int] = Query(None, ge=1, le=1000, description="stop after N events (diagnostics)"),
+        league: Optional[int] = Query(None, description="a league id: stream its hand-entered live board instead of the screen-capture board"),
+    ):
         """Server-sent events: the leaderboard and engine status, pushed as they change."""
+        feed: Source = source
+        if league is not None:
+            with db.connect() as conn:
+                if conn.execute("SELECT 1 FROM leagues WHERE id = ?", (league,)).fetchone() is None:
+                    raise HTTPException(404, "No such league")
+            feed = LeagueSource(app, league)
         return StreamingResponse(
-            event_stream(source, max_events=max_events),
+            event_stream(feed, max_events=max_events),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    @app.get("/api/summary", tags=["admin"])
+    @app.get("/api/summary", tags=["admin"], dependencies=admin_only)
     def summary():
         """Headline numbers for the admin overview."""
         return {**data.venue_summary(data.collapse(source.rounds())), "mode": source.mode}
 
-    @app.get("/api/rounds", tags=["admin"])
+    @app.get("/api/rounds", tags=["admin"], dependencies=admin_only)
     def rounds(
         status: Optional[str] = Query(None, description="completed | ended_early | abandoned | snapshot"),
         player: Optional[str] = None,
@@ -243,7 +319,7 @@ def create_app(*, demo: bool = False, source: Optional[Source] = None, rounds_pa
         rows = data.filter_rounds(data.collapse(source.rounds()), status=status, player=player, query=q)
         return {"total": len(rows), "offset": offset, "rounds": rows[offset:offset + limit]}
 
-    @app.get("/api/rounds/{round_id}/{player}", tags=["admin"])
+    @app.get("/api/rounds/{round_id}/{player}", tags=["admin"], dependencies=admin_only)
     def round_detail(round_id: str, player: str):
         """One player's round in full: hole-by-hole scorecard, stats, shots, where the scores came from."""
         for record in data.collapse(source.rounds()):
@@ -251,12 +327,12 @@ def create_app(*, demo: bool = False, source: Optional[Source] = None, rounds_pa
                 return data.detail(record)
         raise HTTPException(404, "Round not found")
 
-    @app.get("/api/players", tags=["admin"])
+    @app.get("/api/players", tags=["admin"], dependencies=admin_only)
     def players():
         """One profile per player: rounds, average to par, handicap, recent trend."""
         return {"players": data.players(data.collapse(source.rounds()))}
 
-    @app.get("/api/scorecards/{name}", tags=["admin"])
+    @app.get("/api/scorecards/{name}", tags=["admin"], dependencies=admin_only)
     def scorecard_image(name: str):
         """The screenshot of GSPro's end-of-round scorecard that a round was read from."""
         path = source.scorecard_path(name)

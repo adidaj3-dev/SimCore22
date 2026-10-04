@@ -30,9 +30,9 @@ def test_pages_are_served_as_html_and_revalidate(client, path):
     assert '<script type="module"' in response.text
 
 
-def test_root_goes_to_the_admin_portal(client):
+def test_root_goes_to_the_player_app(client):
     response = client.get("/", follow_redirects=False)
-    assert response.status_code in (302, 307) and response.headers["location"] == "/admin"
+    assert response.status_code in (302, 307) and response.headers["location"] == "/app"
 
 
 @pytest.mark.parametrize("page", ["live.html", "admin.html"])
