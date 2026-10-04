@@ -31,7 +31,7 @@ keeps indoor handicaps, league standings and live leaderboards on every bay. Win
 | Live leaderboard for bay screens + venue admin portal (web UI) | built, tested; works on demo data today and on real rounds as soon as there are some |
 | Player accounts, log-in, hole-by-hole round entry by hand, indoor handicap, league tables, live board per league | built, tested in a real browser on demo data - **not yet tried at a real venue** |
 | Capture-accuracy check (screen capture vs what players typed in) | built, tested; becomes meaningful once capture runs on a real bay |
-| Outdoor GHIN number / index | collected at sign-up, **self-reported - not verified** (needs GHIN / USGA access) |
+| Outdoor handicap ID / index | collected at sign-up, **self-reported - not verified** (no outdoor-handicap service is connected) |
 | POS, bay & lesson scheduling, payments | not started |
 
 ## How it works
@@ -69,8 +69,8 @@ checking it.
 </p>
 
 - **Sign up / log in** (`/login`): name, email, password, and - optionally - the player's
-  **outdoor GHIN number and handicap index** plus their name in GSPro. The GHIN number and
-  index are **on the player's honour**: there is no GHIN check yet. The outdoor index gives a
+  **outdoor handicap ID and index** plus their name in GSPro. The ID and
+  index are **on the player's honour**: nothing checks them yet. The outdoor index gives a
   new player a fair starting handicap until they have a few simulator rounds.
 - **Enter a round** (`/app`, built for phones): pick the league (or a casual 9 / 18), then
   step through each hole - big +/- stepper, one-tap Eagle / Birdie / Par / Bogey / Double.
@@ -80,7 +80,7 @@ checking it.
   becomes a differential (blow-up holes capped at net double bogey, scaled to 18 holes), the
   index is the average of the best differentials of the last 20, and the outdoor index is
   blended in until a player has three rounds. It is a simulator handicap, **not** an official
-  or GHIN handicap, and is rebuilt from the whole history whenever a round is corrected.
+  or outdoor-service handicap, and is rebuilt from the whole history whenever a round is corrected.
 - **Leagues**: an admin creates a league (course, pars, 9 / 18 holes, net or gross ranking);
   players join with a six-character code. The league table ranks by average score to par;
   net scores use each player's index at the start of the round.
@@ -101,7 +101,7 @@ the venue PC itself (`/admin` asks on first visit) or with
 
 > **Before real players use this over a network:** the server speaks plain http. Keep it on the
 > venue network, and put https in front of it (a reverse proxy or tunnel) before exposing it
-> further. Player emails and GHIN numbers are personal data.
+> further. Player emails and handicap IDs are personal data.
 
 ## Web UI
 

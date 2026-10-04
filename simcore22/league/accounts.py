@@ -20,7 +20,7 @@ MAX_FAILS_PER_IP = 25
 MIN_INDEX, MAX_INDEX = -8.0, 54.0
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_GHIN = re.compile(r"^\d{7,8}$")
+_OUTDOOR_ID = re.compile(r"^[A-Za-z0-9]{4,20}$")
 _DUMMY_HASH = security.hash_password("not-a-real-password")   # so an unknown email costs the same time as a wrong password
 
 
@@ -62,13 +62,14 @@ def clean_password(password: Any) -> str:
     return password
 
 
-def clean_ghin(ghin: Any) -> Optional[str]:
-    digits = re.sub(r"[\s-]", "", str(ghin or ""))
-    if not digits:
+def clean_ghin(value: Any) -> Optional[str]:
+    """The outdoor handicap ID a player gives (self-reported; any outdoor service's number). Stored in the ghin_number column."""
+    cleaned = re.sub(r"[\s-]", "", str(value or ""))
+    if not cleaned:
         return None
-    if not _GHIN.match(digits):
-        raise Invalid("A GHIN number is 7 or 8 digits. Leave it blank if you don't have one.")
-    return digits
+    if not _OUTDOOR_ID.match(cleaned):
+        raise Invalid("An outdoor handicap ID is 4 to 20 letters or digits. Leave it blank if you don't have one.")
+    return cleaned
 
 
 def clean_index(value: Any, label: str = "Handicap index") -> Optional[float]:
@@ -147,7 +148,7 @@ def list_users(conn) -> list:
 
 def update_profile(conn, user_id: int, *, display_name=None, outdoor_index=None, ghin_number=None,
                    gspro_name=None, fields: Optional[set] = None) -> Dict[str, Any]:
-    """Change only the fields named in `fields` (so a blank GHIN can mean 'remove it')."""
+    """Change only the fields named in `fields` (so a blank ID can mean 'remove it')."""
     row = get_row(conn, user_id)
     fields = fields or set()
     new = {

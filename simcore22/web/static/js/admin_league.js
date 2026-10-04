@@ -262,7 +262,7 @@ export function makePages(ctx) {
       const rows = players.filter((p) => `${p.display_name} ${p.email} ${p.gspro_name || ''}`.toLowerCase().includes(q.toLowerCase()));
       count.textContent = plural(rows.length, 'player');
       host.replaceChildren(rows.length ? h('table', { class: 'table' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Player'), h('th', { class: 'num' }, 'Indoor'), h('th', { class: 'num hide-sm' }, 'Outdoor'), h('th', { class: 'hide-sm' }, 'GHIN'),
+        h('thead', {}, h('tr', {}, h('th', {}, 'Player'), h('th', { class: 'num' }, 'Indoor'), h('th', { class: 'num hide-sm' }, 'Outdoor'), h('th', { class: 'hide-sm' }, 'Outdoor ID'),
           h('th', { class: 'hide-sm' }, 'Leagues'), h('th', { class: 'num' }, 'Rounds'), h('th', { class: 'hide-sm' }, 'Last played'))),
         h('tbody', {}, rows.map((p) => h('tr', { class: 'click', tabindex: 0, onclick: () => { location.hash = `#/players/${p.id}`; } },
           h('td', {}, person(p.display_name, p.email), p.role === 'admin' ? h('span', { class: 'badge info', style: { marginLeft: '8px' } }, 'Admin') : null,
@@ -297,7 +297,7 @@ export function makePages(ctx) {
     const val = (v) => (v == null ? '' : String(v));
     const name = h('input', { class: 'input', value: val(u.display_name), maxlength: 60 });
     const outdoor = h('input', { class: 'input', value: val(u.outdoor_index), inputmode: 'decimal' });
-    const ghin = h('input', { class: 'input', value: val(u.ghin_number), inputmode: 'numeric' });
+    const ghin = h('input', { class: 'input', value: val(u.ghin_number), maxlength: 20 });
     const gspro = h('input', { class: 'input', value: val(u.gspro_name), maxlength: 60 });
     const error = errorLine();
     const editForm = h('form', { class: 'form', onsubmit: async (event) => {
@@ -305,7 +305,7 @@ export function makePages(ctx) {
       try { await patch(`/api/admin/players/${id}`, { display_name: name.value, outdoor_index: outdoor.value, ghin_number: ghin.value, gspro_name: gspro.value }); toast('Saved'); refresh(); }
       catch (err) { fail(error, err); }
     } },
-    field('Name', name), h('div', { class: 'two' }, field('Outdoor GHIN', ghin), field('Outdoor index', outdoor)),
+    field('Name', name), h('div', { class: 'two' }, field('Outdoor handicap ID', ghin), field('Outdoor index', outdoor)),
     field('Name in GSPro', gspro, 'Matches screen-captured rounds to this player.'),
     error, h('button', { class: 'btn primary', type: 'submit' }, 'Save details'));
 

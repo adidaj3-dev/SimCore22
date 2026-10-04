@@ -28,7 +28,7 @@ CREATE TABLE users (
   password_hash TEXT NOT NULL,
   role          TEXT NOT NULL DEFAULT 'player' CHECK (role IN ('player', 'admin')),
   outdoor_index REAL,            -- what the player says their outdoor handicap index is (NOT verified)
-  ghin_number   TEXT,            -- self-reported; never verified against GHIN
+  ghin_number   TEXT,            -- the outdoor handicap ID the player gave (any outdoor service); self-reported, never verified
   gspro_name    TEXT,            -- the name this player uses inside GSPro; links screen-captured rounds to them
   indoor_index  REAL,            -- the current SimCore indoor index; rebuilt from their rounds (handicap.py)
   created_at    TEXT NOT NULL,

@@ -3,7 +3,7 @@
 The SimCore indoor handicap ("SimCore Index v1").
 
 This is modelled on the World Handicap System but it is NOT an official handicap and is not
-GHIN: it only counts rounds played and entered here, on simulators. The rules, in plain words:
+an outdoor-service handicap: it only counts rounds played and entered here, on simulators. The rules, in plain words:
 
 * Each completed round gets a score *differential*: how far over par the round was, after
   capping each hole at net double bogey, scaled to 18 holes so 9- and 18-hole rounds mix.

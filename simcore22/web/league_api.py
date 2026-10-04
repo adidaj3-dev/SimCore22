@@ -143,7 +143,7 @@ def build_router() -> APIRouter:
 
     @router.post("/api/auth/signup", tags=["accounts"])
     def signup(body: SignupBody, request: Request, response: Response):
-        """Make a player account (outdoor GHIN and index are self-reported). A league join code is optional."""
+        """Make a player account (outdoor handicap ID and index are self-reported). A league join code is optional."""
         with db(request).connect() as conn:
             code = (body.join_code or "").strip()
             if code and conn.execute("SELECT 1 FROM leagues WHERE join_code = ? AND archived = 0", (code.upper(),)).fetchone() is None:

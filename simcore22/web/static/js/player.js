@@ -521,7 +521,7 @@ async function renderHandicap() {
             h('li', {}, h('b', {}, 'Your index is your best rounds. '), 'The average of your lowest differentials from your last 20 rounds – the same idea as the World Handicap System.'),
             h('li', {}, h('b', {}, 'New players get a head start. '), 'Until you have 3 rounds, your outdoor index is blended in so one wild round can’t swing it.'),
             h('li', {}, h('b', {}, 'Net scores use it. '), 'In a net league you receive strokes based on your index at the start of the round.')),
-          h('p', {}, 'This is a simulator handicap for your venue’s leagues. It is not a GHIN handicap, and your outdoor GHIN number and index are self-reported – they aren’t verified yet.'))))));
+          h('p', {}, 'This is a simulator handicap for your venue’s leagues. It is not an official handicap, and your outdoor handicap ID and index are self-reported – they aren’t verified yet.'))))));
   state.cleanup = null;
 }
 
@@ -535,7 +535,7 @@ async function renderProfile() {
   const val = (v) => (v == null ? '' : String(v));
   const name = h('input', { class: 'input', name: 'display_name', value: val(user.display_name), maxlength: 60, required: '' });
   const outdoor = h('input', { class: 'input', name: 'outdoor_index', value: val(user.outdoor_index), inputmode: 'decimal', placeholder: 'e.g. 14.2' });
-  const ghin = h('input', { class: 'input', name: 'ghin_number', value: val(user.ghin_number), inputmode: 'numeric', placeholder: 'optional' });
+  const ghin = h('input', { class: 'input', name: 'ghin_number', value: val(user.ghin_number), placeholder: 'optional', maxlength: 20 });
   const gspro = h('input', { class: 'input', name: 'gspro_name', value: val(user.gspro_name), maxlength: 60 });
   const ok = h('div', { class: 'form-ok', hidden: true, role: 'status' }, 'Saved.');
   const error = h('div', { class: 'form-error', hidden: true, role: 'alert' });
@@ -547,8 +547,8 @@ async function renderProfile() {
     } catch (err) { error.textContent = err.message; error.hidden = false; }
   } },
   field('Name', name),
-  h('div', { class: 'two' }, field('Outdoor GHIN number', ghin), field('Outdoor handicap index', outdoor)),
-  h('p', { class: 'note' }, 'GHIN number and index are on your honour for now – they aren’t checked against GHIN yet.'),
+  h('div', { class: 'two' }, field('Outdoor handicap ID', ghin), field('Outdoor handicap index', outdoor)),
+  h('p', { class: 'note' }, 'Handicap ID and index are on your honour for now – they aren’t checked against any outdoor handicap service.'),
   field('Your name in GSPro', gspro, 'Lets screen-captured rounds be matched to you.'),
   error, ok, h('button', { class: 'btn primary', type: 'submit' }, 'Save changes'));
 
