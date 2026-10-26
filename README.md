@@ -5,6 +5,10 @@ hole (or, as it matures, have them read from GSPro and launch monitors automatic
 keeps indoor handicaps, league standings and live leaderboards on every bay. Windows, Python
 3.12+ (developed on 3.14).
 
+Built by a golf professional (former head pro, director of golf, and college head coach)
+who has run indoor programs and wanted one system for the whole venue instead of
+spreadsheets and whiteboards.
+
 > **Status: proof of concept.** Everything below is built and tested without
 > hardware. The first run on a real bay (Foresight Falcon / Hawk + GSPro) is
 > the next milestone - see [Status](#status).
